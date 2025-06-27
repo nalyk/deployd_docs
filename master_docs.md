@@ -526,3 +526,1816 @@ Deployd projects are designed to be committed to version control systems so team
 ### Recommended Ignored Files
 
 You shouldn't commit the `/data` or `.dpd` directories. The files in these directories are environment specific and should be kept out of version control. All other Deployd files should be committed.
+<!--{
+  title: 'Accessing Collections with dpd.js',
+  tags: ['guide', 'collection']
+}-->
+
+## Accessing Collections with dpd.js
+
+`dpd.js` is an auto-generated library that updates as you update the resources in your Deployd API. If you are writing your front-end in the `public` directory, include a script tag tag in your HTML:
+
+    <script src="/dpd.js" type="text/javascript"></script>
+
+*Note: The dpd.js file will not appear in the `public` directory because it is generated at runtime.*
+
+### Example Usage
+
+    dpd.todos.get(function(todos, error) {
+      if (error) {
+        alert(error.message);
+      } else {
+        for (var i = 0; i < todos.length; i++) {
+          renderTodo(todos[i]);
+        };
+      }
+    });
+
+Dpd.js functions are *asynchronous*: they do not return a value, but execute a callback function when the AJAX operation is complete.
+
+    // Does not work
+    var result = dpd.todos.get();
+
+<!--...-->
+
+    // Works as expected
+    dpd.todos.get(function(result, error) {
+      // Work with result
+    });
+
+For details on using dpd.js, see the [dpd.js reference](/docs/collections/reference/dpd-js.md)
+
+Also see [A Simple Todo App](/docs/collections/examples/a-simple-todo-app.md) for a working example.
+
+### Using dpd.js on a different origin
+
+You can use the dpd.js library outside of the `public` folder by using an absolute URL to the file.
+
+This will not work on browsers that do not support Cross-Origin Resource Sharing (namely Internet Explorer 7 and below).
+
+
+### Accessing Collections without Dpd.js
+
+The dpd.js library is not required; it is only a utility library for accessing Deployd's HTTP API with AJAX. For details on the HTTP API, see the [HTTP API Refernence](/docs/collections/reference/http.md).
+
+Some front-end libraries include support for HTTP or REST APIs; for examples of how to use these instead of dpd.js, see [A Simple Todo App with Backbone](/docs/collections/examples/a-simple-todo-app-with-backbone.md) and [A Simple Todo App with AngularJS](/docs/collections/examples/a-simple-todo-app-with-angular.md)<!--{
+  title: 'Adding Custom Business Logic with Events',
+  tags: ['guide', 'collection', 'events']
+}-->
+
+## Adding Custom Business Logic with Events
+
+Events allow you to add custom business logic to your Collection. By writing Events, you can add validation, relationships, and security to your app. Events are written in JavaScript (specifically, the ECMAScript 5 standard) and have access to the [Collection Events API](/docs/collections/reference/event-api.md).
+
+The following events are available for scripting:
+
+### On Get
+
+> file: resources/{resourcename}/get.js
+
+Called whenever an object is loaded from the server. Commonly used to hide properties, restrict access to private objects, and calculate dynamic values.
+
+    // Example On Get: Hide Secret Properties
+    if (!me || me.id !== this.creatorId) {
+      hide('secret');
+    }
+
+<!--seperate-->
+
+    // Example On Get: Load A Post's Comments
+    if (query.loadComments) {
+      dpd.comments.get({postId: this.id}, function(comments) {
+        this.comments = comments;
+      });  
+    }
+
+*Note: When a list of objects is loaded, `On Get` will run once for each object in the list. Calling `cancel()` in this case will remove the object from the list, rather than cancelling the entire request.*
+
+### On Validate 
+
+> file: resources/{resourcename}/validate.js
+
+Called whenever an object's values change, including when it is first created. Commonly used to validate property values and calculate certain dynamic values (i.e. last modified time). 
+
+    // Example On Validate: Enforce a max length
+    if (this.body.length > 100) {
+      error('body', "Cannot be more than 100 characters");
+    }
+
+<!--seperate-->
+
+    // Example On Validate: Normalize an @handle
+    if (this.handle.indexOf('@') !== 0) {
+      this.handle = '@' + this.handle;
+    }
+
+*Note: `On Post` or `On Put` will execute after `On Validate`, unless `cancel()` or `error()` is called*
+
+
+### On Post
+
+> file: resources/{resourcename}/post.js
+
+Called when an object is created. Commonly used to prevent unauthorized creation and save data relevant to the creation of an object, such as its creator.
+
+    // Example On Post: Save the date created
+    this.createdDate = new Date().getTime();
+
+<!--seperate-->
+
+    // Example On Post: Prevent unauthorized users from posting
+    if (!me) {
+      cancel("You must be logged in", 401);
+    }
+
+
+### On Put
+
+> file: resources/{resourcename}/put.js
+
+Called when an object is updated. Commonly used to restrict editing access to certain roles, or to protect certain properties from editing. It is strongly recommended that you `protect()` any properties that should not be modifiable by users after an object is created.
+
+    // Example On Put: Protect readonly/automatic properties
+    protect('createdDate');
+    protect('creatorId');
+
+### On Delete 
+
+> file: resources/{resourcename}/delete.js
+
+Called when an object is deleted. Commonly used to prevent unauthorized deletion.
+
+    // Example On Delete: Prevent non-admins from deleting
+    if (!me || me.role !== 'admin') {
+      cancel("You must be an admin to delete this", 401);
+    }
+    
+### On Before request 
+
+> file: resources/{resourcename}/beforerequest.js
+
+called before GET/POST/PUT/DELETE requests
+
+### Asynchronous
+
+> Want to look up stuff in the database, but your request finishes before your db-call returns?
+
+
+* In that case, you want **async** webrequest.
+
+By default events are **synchronous**, however they can be turned into async like so:
+
+
+    var async = require("async");
+    $addCallback();
+
+    var payload = this // in case of POST/PUT
+
+    async.each(body.storeData, function (data, done) {
+      doStuffOnData(data, function (err, result) {
+         done(err, result);
+      );
+    }, function (err){
+        if (err) return cancel(err);
+        $finishCallback()`; instead of `done(err,{})`
+    });
+
+> NOTE: in case of **dpd-event** events, use `setResult({})` instead of `done(err,{})`
+<!--{
+  title: 'Building a Custom Client',
+  tags: ['reference', 'collection', 'http', 'websockets', 'cors']
+}-->
+
+## Accessing Collections - Building a Custom Client
+ 
+In this guide, we will build an HTTP client from scratch to perform CRUD as well as listen for events from a Collection.
+
+### REST
+
+Most REST clients should work with Deployd Collections right away, though Deployd does not strictly follow REST. For example, Backbone.js and AngularJS's HTTP utilities work with Deployd without modification.
+
+### WebSockets
+
+To fully implement the Collection API, a client must be compatible with WebSockets and Socket.IO specifically. Clients are responsible for sending heartbeat information as well as reconnecting in the case of unexpected disconnects.
+    
+### Building a Node.js Client
+
+The following is implemented in [Node.js](http://nodejs.org/), but the basic idea can be applied to any language or platform.
+
+#### Basics
+
+All we need to create a collection client is a constructor and a single method for making requests.
+
+    var request = require('request');
+
+    function Collection(url) {
+      this.url = url
+    }
+
+    Collection.prototype.request = function (options, fn) {
+      var url = this.url;
+      options.url = url + (options.url || '');  
+      request(options, function (err, res, body) {
+        if(res.statusCode >= 400) {
+          err = body || {message: 'an unknown error occurred'};
+          return fn(err);
+        }
+    
+        fn(null, body);
+      });
+    }
+    
+Now we can construct new collections by passing the URL as the only argument to our constructor.
+
+    var c = new Collection('http://foo.deploydapp.com/todos');
+
+    c.request({url: '?done=false'}, function(err, todos) {
+      console.log(todos); // [...]
+    });
+
+We can add an object to our collection by passing an object as the json body and setting the `method` to "POST".
+
+    var todo = {
+      title: 'wash the car'
+    };
+
+    c.request({json: todo, method: 'POST'}, function(err, todo) {
+      console.log(todo); // {id: '...', ...}
+    });
+    
+To update an object we just need to set the `method` to "PUT".
+
+    var todo = {
+      id: '06a5254f11ff7853',
+      done: true
+    };
+
+    c.request({json: todo, method: 'PUT'}, function(err, todo) {
+      console.log(todo); // {id: '...', ...}
+    });
+
+Deleting an object requires an ID and the method must be set to "DELETE".
+
+    var id = '06a5254f11ff7853';
+
+    c.request({url: '/' + id, method: 'DELETE'}, function(err, todo) {
+      console.log(err); // null - if no error occurred
+    });
+    
+### Listening to Events
+
+The simplest way to listen events is to use a Socket.IO client. You can find a list of clients [here](https://github.com/LearnBoost/socket.io/wiki).
+
+Using the node.js Socket.IO client, we can create a socket by connecting to our deployed app. Then calling the socket's `on()` method to listen to a custom event emitted by a collection.
+
+    var io = require('socket.io-client');
+    var socket = io.connect('http://foo.deploydapp.com');
+
+    socket.on('my event', function (data) {
+      console.log(data); // emit()ed from the server
+    });
+<!--{
+  title: 'Creating Collections',
+  tags: ['guide', 'collection']
+}-->
+
+## Creating Collections
+
+A Collection exposes a database-like API directly to clients over HTTP and WebSockets. Clients can run advanced queries, create and update objects, and listen for realtime messages to sync with the Collection when it updates. You can create a Collection in the dashboard by clicking the "Resources +" button in the sidebar, and choosing "Collection".
+
+### Properties
+
+Every Collection requires a set of properties that describe the data it can store. By default every object in a Collection is created with an `id`. If an object being `POST`ed or `PUT` into a Collection includes properties or values that don't match what the collection allows, they will be ignored. The following property types are available when creating a Collection:
+
+ - `String` - Acts like a JavaScript string
+ - `Number` - Stores numeric values, including floating points.
+ - `Boolean` - Either true or false. (To avoid confusion, Deployd will consider null or undefined to be false)
+ - `Object` - Stores any JSON object. Useful for storing arbitrary data on an object without needing to validate schema.
+ - `Array` - Stores an array of any type.
+
+### The Data Editor
+
+Once you create a Collection from the dashboard, you can add and edit its data using the data editor. The data editor is designed to edit all sorts of data, including objects and arrays.
+
+#### Basic Use
+
+Double-click in a cell to start editing. Press Enter to save your changes, or Escape to cancel and undo your changes.
+
+While editing a string property, click the "edit" icon next to the field to open up a multiline editor.
+
+Click the trash can icon in any row to delete it.
+
+Edit the bottom-most row to create a new object. Press Enter when editing a property to save the row, or click the checkmark in the margin.
+
+#### Useful Shortcuts
+
+ - Use the arrow keys to move your selection without using the mouse.
+ - Press "Enter" when a cell is selected to start editing.
+ - Start typing when a cell is selected to overwrite its existing value. 
+ - If you accidentally save a change, press Ctrl/Cmd-Z to reverse it.
+ - Press Ctrl-Delete to remove a row. Press Ctrl/Cmd-Z to add it back. (heads up: it will have a different `id`)
+ - Press Ctrl-Enter to open up the multiline editor for a string property; this lets you write long text values.
+ - Press Ctrl-Enter while in the multiline editor to save it (pressing Enter will just create a new line)
+ - Press Tab to save the current property and edit the next one.
+<!--{
+  title: 'A Simple Todo App with AngularJS',
+  tags: ['example', 'collection', 'angularjs']
+}-->
+
+## A Simple Todo App with AngularJS
+
+![Todo app](/examples/images/todo-app.png)
+
+This app demonstrates how to access a Collection's API using the [AngularJS](http://angularjs.org/) framework.
+
+<a href="https://github.com/downloads/deployd/examples/todo-app-angular.zip" class="btn btn-primary">Download</a> <a href="https://github.com/deployd/examples/tree/master/collection/todo-app-angular" class="btn">View Source</a>
+
+### Useful files
+
+- [index.html](https://github.com/deployd/examples/blob/master/collection/todo-app-angular/public/index.html)
+- [todo.js](https://github.com/deployd/examples/blob/master/collection/todo-app-angular/public/js/todo.js)<!--{
+  title: 'A Simple Todo App with Backbone.js',
+  tags: ['example', 'collection', 'backbone']
+}-->
+
+## A Simple Todo App with Backbone.js
+
+![Todo app](/examples/images/todo-app.png)
+
+This app demonstrates how to access a Collection's API using [Backbone.js](http://backbonejs.org/).
+
+<a href="https://github.com/downloads/deployd/examples/todo-app-backbone.zip" class="btn btn-primary">Download</a> <a href="https://github.com/deployd/examples/tree/master/collection/todo-app-backbone" class="btn">View Source</a>
+
+### Useful files
+
+- [index.html](https://github.com/deployd/examples/blob/master/collection/todo-app-backbone/public/index.html)
+- [todo.js](https://github.com/deployd/examples/blob/master/collection/todo-app-backbone/public/js/todo.js)<!--{
+  title: 'A Simple Todo App',
+  tags: ['example', 'collection', 'dpd.js']
+}-->
+
+## A Simple Todo App
+
+![Todo app](/examples/images/todo-app.png)
+
+This app demonstrates how to access a Collection's API using dpd.js.
+
+<a href="https://github.com/downloads/deployd/examples/todo-app.zip" class="btn btn-primary">Download</a> <a href="https://github.com/deployd/examples/tree/master/collection/todo-app" class="btn">View Source</a>
+
+### Useful files
+
+- [todo.js](https://github.com/deployd/examples/blob/master/collection/todo-app/public/js/todo.js)<!--{
+  title: 'Chatroom',
+  tags: ['example', 'collection', 'dpd.js', 'realtime']
+}-->
+
+## Chatroom
+
+![Todo app](/examples/images/chat-room.png)
+
+This app demonstrates how to send messages to the client using Sockets when data is updated on the server.
+
+<a href="https://github.com/downloads/deployd/examples/chatroom.zip" class="btn btn-primary">Download</a> <a href="https://github.com/deployd/examples/tree/master/collection/chatroom" class="btn">View Source</a>
+
+### Useful files
+
+- [chatroom.js](https://github.com/deployd/examples/blob/master/collection/chatroom/public/js/chatroom.js)
+- [messages/validate.js](https://github.com/deployd/examples/blob/master/collection/chatroom/resources/messages/validate.js) (On Validate `/messages`)
+- [messages/post.js](https://github.com/deployd/examples/blob/master/collection/chatroom/resources/messages/post.js) (On POST `/messages`)## Collections
+
+The most commonly used resource in a Deployd app is the Collection. It exposes a database like API that allows any client to query, modify and sync the data in your app, all without having to write a ton of boilerplate code on the server.
+
+### Properties
+
+Collection properties allow you to restrict what type of data a collection can store. You define them using the **property editor** in the dashboard. 
+
+![Property Editor](/images/property-editor.png)
+
+### Data
+
+Collection's use JSON to store and transport your objects over the wire. Deployd comes bundled with a fully featured **data-editor** for easily managing the data in your collection.
+
+### Events
+
+[Control the behavior and business logic](/docs/collections/adding-logic.md) of the data in your collection by writing events. Events also allow you to easily create [relationships between collections](/docs/collections/relationships-between-collections.md).
+
+### Notifying Clients of Changes
+
+Deployd allows you to [send messages to the browser in real time](/docs/collections/notifying-clients.md) when a Collection is updated.<!--{
+  title: 'Notifying the Client of Changes with Messages',
+  tags: ['guide', 'collection', 'sockets', 'emit']
+}-->
+
+## Notifying the Client of Changes with Messages
+
+Keeping all of the clients of your API up-to-date with your collection's latest data is simple with collection events. For example, in a `PUT` event, you can notify all connected clients of the changes to the object being updated by calling the [emit()](/docs/collections/reference/event-api.md#s-emit) function to send all connected users a message.
+
+The `emit()` function takes an event argument and an arbitrary data object to send to all of the connected clients  (eg. `emit('my message', {foo: 'bar'})`). Dpd.js clients can listen for these events using the `on()` method (eg. `dpd.todos.on('my message', fn)`).
+
+### Example
+
+Let's say you want to make a chatroom app and you have a Collection called `/messages`. 
+
+In the `On POST` event of `/messages`, you would add the following line:
+
+    emit('messages:create', this);
+
+This sends a message called `messages:create` (This could be anything) with the current object (`this`) as an argument. The `messages:` prefix namespaces the event to the collection.
+
+On the client, you would listen for that event using `dpd.on()` and respond by updating the DOM:
+
+    dpd.messages.on('create', function(message) {
+      renderMessage(message);
+    });
+
+The `message` argument is the value you passed on the server (`this`).
+
+See the [Chatroom Example](/docs/collections/examples/chatroom.md) for a working version of this code.
+
+### Browser and Server Support
+
+The realtime messaging features of Deployd are built on [Socket.IO](http://socket.io/) and work on almost every major browser:
+
+- Internet Explorer 5.5+
+- Safari 3+
+- Google Chrome 4+
+- Firefox 3+
+- Opera 10.61+
+- iOS Safari
+- Android WebKit
+- WebOS WebKit
+
+(taken from [Socket.IO's site](http://socket.io/#browser-support))
+
+### Further Reading
+
+- [Event API](/docs/collections/notifying-clients.md)
+- [dpd.js Reference](/docs/collections/reference/dpd-js.md)
+- [HTTP API Reference](/docs/collections/reference/http.md)
+
+<!--{
+  title: 'Using dpd.js',
+  tags: ['reference', 'collection', 'http', 'websockets', 'cors']
+}-->
+
+## Dpd.js
+
+`dpd.js` is an auto-generated library that provides access to Collections and other Deployd features on the front-end. For a basic overview, see [Accessing Collections with dpd.js](/docs/collections/accessing-collections.md).
+
+### Accessing the Collection
+
+The API for your Collection is automatically generated as `dpd.[collectionname]`.
+
+Examples:
+
+    dpd.todos
+    dpd.users
+    dpd.todolists
+
+*Note: If your Collection name has a dash in it (e.g. `/todo-lists`), the dash is removed when accessing it in this way (e.g. `dpd.todolists`).*
+
+You can also access your collection by using `dpd(collectionName)` as a function.
+
+Examples:
+
+    dpd('todos')
+    dpd('users')
+    dpd('todo-lists')
+
+*Note: Collections accessed in this way will not have helper functions besides `get`, `post`, `put`, `del`, and `exec` (see [Dpd.js for Custom Resources](/docs/using-modules/reference/dpd-js.md) for details on these generic functions)*
+
+
+### Collection API
+
+The examples below use a Collection called `/todos` with the following schema:
+
+- `id`
+- string `title`
+- string `category`
+
+#### Callbacks
+
+Every function in the Collection API takes a callback function (represented by `fn` in the docs) with the signature `function(result, error)`.
+
+The callback will be executed asynchronously when the API has received a response from the server.
+
+The `result` argument differs depending on the function. If the result failed, it will be `null` and the `error` argument will contain the error message.
+
+The `error` argument, if there was an error, is an object:
+
+ - `status` (number): The HTTP status code of the request. Common codes include:
+  - 400 - Bad Request: The request contained invalid data and could not be completed
+  - 401 - Unauthorized: The current session is not authorized to perform that action
+  - 500 - Internal Server Error: Something went wrong on the server
+ - `message` (string): A message describing the error. Not always present.
+ - `errors` (object): A hash of error messages corresponding to the properties of the object that were sent - usually indicates validation errors. Not always present.
+
+Examples of errors:
+
+    {
+      "status": 401,
+      "message": "You are not allowed to access that collection!"
+    }
+
+<!--...-->
+
+    {
+      "status": 400,
+      "errors": {
+          "title": "Title must be less than 100 characters",
+          "category": "Not a valid category"
+      }
+    }
+
+
+#### Promises
+
+Every function in the collection API returns a promise.
+We use the [`ayepromise` library](https://github.com/cburgmer/ayepromise) (which follows the [Promises/A+ 1.1 specs](https://promisesaplus.com/)).
+To learn how to use promises, please, refer [to this article](http://www.html5rocks.com/en/tutorials/es6/promises).
+
+The first callback contains the same `result` same with the classic callbacks.
+The second callback contains the `error` object as described above.
+Here's an example to use promises within dpd.js:
+
+    dpd.todos.post({message: "Hello world"}).then(function(todo) {
+      // do something with todo
+      console.log(todo); // display {id: "###", message: 'Hello world'}
+    }, function(err) {
+      // do something with the error
+      console.log(err); // display an error if the request failed
+    });
+
+<!--...-->
+
+    dpd.todos.get('1234324324').then(function(todo) {
+      // do something with todo
+      console.log(todo); // display {id: "###", message: 'Hello world'}
+    }, function(err) {
+      // do something with the error
+      console.log(err.errors.message); // display the error message
+    });
+
+
+#### .get([id], [query], fn) <!-- api -->
+
+##### Listing Data
+
+The `.get(fn)` function returns an array of objects in the collection.
+
+    // Get all todos
+    dpd.todos.get(function(results, error) {
+      //Do something
+    });
+
+`results` is an array of objects:
+
+    [
+      {
+        "id": "320d6151a9aad8ce",
+        "title": "Wash the dog",
+        "category": "pets"
+      }, {
+        "id": "320d6151a9aad8ce"
+        "title": "Write autobiography",
+        "category": "writing"
+      }
+    ]
+
+If the collection has no objects, it will be an empty array:
+
+    []
+
+##### Querying Data
+
+The `.get(query, fn)` function filters results by the specified query object. See [Querying Collections](/docs/collections/reference/querying-collections.md) for information on constructing a query.
+
+    // Get all todos that are in the pets category
+    dpd.todos.get({category: 'pets'}, function(results, error) {
+      // Do something
+    });
+
+`results` is an array of objects:
+
+    [
+      {
+        "id": "320d6151a9aad8ce",
+        "title": "Wash the dog",
+        "category": "pets"
+      }
+    ]
+
+##### Getting a Specific Object
+
+The `.get(id, fn)` function returns a single object by its `id` property.
+
+    // Get a specific todo
+    dpd.todos.get("320d6151a9aad8ce", function(result, error) {
+      // Do something
+    });
+
+`result` is the object that you requested:
+
+    {
+      "id": "320d6151a9aad8ce",
+      "title": "Wash the dog",
+      "category": "pets"
+    }
+
+#### .post([id], object, fn) <!-- api -->
+
+##### Creating an Object
+
+The `.post(object, fn)` function creates an object in the collection with the specified properties.
+
+    // Create a todo
+    dpd.todos.post({title: "Walk the dog"}, function(result, error)) {
+      // Do something
+    });
+
+`result` is the object that you posted, with any additional calculated properties and the `id`:
+
+    {
+      "id": "91c621a3026ca8ef",
+      "title": "Walk the dog"
+    }
+
+##### Updating an Object
+
+The `.post(id, object, fn)` function, or `.post(object, fn)` where `object` has an `id` property, will update an object. Using the `.post()` function in this way behaves the same as the `put()` function.
+
+This is useful when you want to insert an object if it does not exist and update it if it does.
+
+#### .put([id or query], object, fn) <!-- api -->
+
+##### Updating an Object
+
+The `.put(id, object, fn)` function will update an object that is already in the collection. It will only change the properties that are provided. It is also possible to incrementally update certain properties; see [Updating Objects in Collections](/docs/collections/reference/updating-objects.md) for details.
+
+    // Update a todo
+    dpd.todos.put("91c621a3026ca8ef", {title: "Walk the cat"}, function(result, error)) {
+      // Do something
+    });
+
+You can also use the syntax `put(object, fn)` if `object` has an `id` property:
+
+    // Update a todo
+    dpd.todos.put({id: "91c621a3026ca8ef", title: "Walk the cat"}, function(result, error)) {
+      // Do something
+    });
+
+Finally, you can provide a `query` object to ensure that the object you are updating has the correct properties. You must still provide an `id` property. This can be useful as a failsafe.
+
+    // Update a todo only if it is in the "pets" category
+    dpd.todos.put(
+      {id: "91c621a3026ca8ef", category: "pets"},
+      {title: "Walk the cat"},
+      function(result, error) {
+        // Do something
+      });
+
+`result` is the entire object after the update:
+
+    {
+      "id": "91c621a3026ca8ef",
+      "title": "Walk the cat",
+      "category": "pets"
+    }
+
+The `.put()` function will return an error if the `id` and/or `query` does not match any object in the collection:
+
+    {
+      "status":400,
+      "message":"No object exists that matches that query"
+    }
+
+#### .del(id or query, fn) <!-- api -->
+
+##### Deleting an Object
+
+The `.del(id, fn)` function will delete an object from the collection.
+
+    // Delete an object
+    dpd.todos.del("91c621a3026ca8ef", function(result, error) {
+      // Do something
+    });
+
+You can also use the syntax `.del(query, fn)` if `object` has an `id` property. You can add additional properties to the `query` object to ensure that you are removing the correct object:
+
+    // Delete an object
+    dpd.todos.del({id: "91c621a3026ca8ef", title: "Walk the dog"}, function(result, error) {
+      // Do something
+    });
+
+`result` will always be null.
+
+### Realtime API
+
+#### dpd.on(message, fn) <!-- api -->
+
+The `dpd.on(message, fn)` function listens for realtime messages emitted from the server. See [Notifying the Client of Changes](/docs/collections/notifying-clients.md) for information on sending realtime messages with the `emit()` function.
+
+* `message` - The name of the message to listen for
+* `fn` - Callback `function(messageData)`. Called every time the message is received. There is no `error` argument.
+
+<!--seperate-->
+
+    // Listen for a new todo
+    dpd.on('todos:create', function(post) {
+      // Do something
+    });
+
+In your Collection Event:
+
+    // On Post
+    emit('todos:create', this);
+
+Calling `.on()` on the collection itself will namespace the message by the collection name:
+
+    // Same as dpd.on('todos:create', fn)
+    dpd.todos.on('create', function(post) {
+      // Do something
+    });
+
+#### dpd.off(message, [fn]) <!-- api -->
+
+The `dpd.off(message)` function stops listening for the specified message.
+
+    dpd.off('todos:create');
+
+You can also provide a function that was originally set as a listener to remove only that function.
+
+    function onTodoCreated(post) {
+      // Do something
+    }
+
+    dpd.on('todos:create', onTodoCreated);
+
+    dpd.off('todos:create', onTodoCreated);
+
+Calling `.off()` on the collection itself will namespace the message by the collection name:
+
+    // Same as dpd.off('todos:create');
+    dpd.todos.off('create');
+
+#### dpd.once(message, fn) <!-- api -->
+
+The `dpd.once(message, fn)` function listens for a realtime message emitted by the server and runs the `fn` callback exactly once.
+
+    dpd.once('todos:create', function(post) {
+      // Do something
+    });
+
+Calling `.once()` on the collection itself will namespace the message by the collection name:
+
+    // Same as dpd.once('todos:create');
+    dpd.todos.once('create', function(post) {
+      // Do something
+    });
+
+#### dpd.socketReady(fn) <!-- api -->
+
+The `dpd.socketReady(fn)` function waits for a connection to be established to the server and executes the `fn` callback with no arguments. If a connection has already been established, it will execute the `fn` callback immediately.
+
+It can sometimes take a second or more to establish a connection, and messages sent during this time will not be received by your front end. This function is useful for ensuring that you will receive an message when it is broadcast.
+
+    dpd.socketReady(function() {
+      // Do something
+    });
+
+#### dpd.socket <!-- api -->
+
+The `dpd.socket` object is a [socket.io](http://socket.io/#how-to-use) object. This is useful if you want to finely control how messages are received.
+<!--{
+  title: 'Event API',
+  tags: ['reference', 'collection']
+}-->
+
+## Event API
+
+### this <!--api-->
+
+The current object is represented as `this`. You can always read its properties. Modifying its properties in an `On Get` request will change the result that the client receives, while modifying its properties in an `On Post`, `On Put`, or `On Validate` will change the value in the database.
+
+    // Example: On Validate
+    // If a property is too long, truncate it
+    if (this.message.length > 140) {
+      this.message = this.message.substring(0, 137) + '...';
+    }
+
+*Note*: In some cases, the meaning of `this` will change to something less useful inside of a function. If you are using functions such as `Array.forEach()`, you may need to bind another variable to `this`:
+
+    // Won't work - sum remains at 0
+    this.sum = 0;
+    this.targets.forEach(function(t) {
+      this.sum += t.points;
+    });
+
+<!--seperate-->
+
+    //Works as expected
+    var self = this;
+
+    this.sum = 0;
+    this.targets.forEach(function(t) {
+      self.sum += t.points;
+    });
+
+
+### ctx <!-- ctx -->
+
+The context of the request. This object contains everything from the request (request, response, body, headers, etc...):
+
+    // Example:
+    if (ctx && ctx.req && ctx.req.headers && ctx.req.headers.host !== '192.168.178.34:2403') {
+      cancel("You are not authorized to do that", 401);
+    }
+
+The entire object is [available as a gist here](https://gist.github.com/NicolasRitouet/2fc5dd20f3af7dc7e192).
+
+### me <!-- api -->
+
+The currently logged in User from a User Collection. `undefined` if no user is logged in.
+
+    // Example: On Post
+    // Save the creator's information
+    if (me) {
+        this.creatorId = me.id;
+        this.creatorName = me.name;
+    }
+
+### isMe() <!-- api -->
+
+    isMe(id)
+
+Checks whether the current user matches the provided `id`.
+
+    // Example: On Get /users
+    // Hide properties unless this is the current user
+    if (!isMe(this.id)) {
+        hide('privateVariable');
+    }
+
+<!-- seperate -->
+
+    // Example: On Put
+    // Make sure that only the creator can edit a post
+    cancelUnless(isMe(this.id), "You are not authorized to edit that post", 401);
+
+### query <!-- api -->
+
+The query string object. On a specific query (such as `/posts/a59551a90be9abd8`), this includes an `id` property.
+
+    // Example: On Get
+    // Don't show the body of a post in a general query
+    if (!query.id) {
+      hide(this.body);
+    }
+
+### cancel() <!-- api -->
+
+    cancel(message, [statusCode])
+
+Stops the current request with the provided error message and HTTP status code. Status code defaults to `400`. Commonly used for security and authorization.
+
+It is strongly recommended that you `cancel()` any events that are not accessible to your front-end, because your API is open to anyone.
+
+    // Example: On Post
+    // Don't allow non-admins to create items
+    if (!me.admin) {
+      cancel("You are not authorized to do that", 401);
+    }
+
+*Note: In a GET event where multiple values are queried (such as on `/posts`), the `cancel()` function will remove the current item from the results without an error message.*
+
+### cancelIf(), cancelUnless() <!-- api -->
+
+    cancelIf(condition, message, [statusCode])
+    cancelUnless(condition, message, [statusCode])
+
+Calls `cancel(message, statusCode)` if the provided condition is truthy (for `cancelIf()`) or falsy (for `cancelUnless()`).
+
+    Example: On Post
+    // Prevent banned users from posting
+    cancelUnless(me, "You are not logged in", 401);
+    cancelIf(me.isBanned, "You are banned", 401);
+
+### error() <!-- api -->
+
+    error(key, message)
+
+Adds an error message to an `errors` object in the response. Cancels the request, but continues running the event so it can collect multiple errors to display to the user. Commonly used for validation.
+
+    // Example: On Validate
+    // Don't allow certain words
+    // Returns response {"errors": {"name": "Contains forbidden words"}}
+    if (!this.name.match(/(foo|bar)/)) {
+      error('name', "Contains forbidden words");
+    }
+
+### errorIf(), errorUnless() <!-- api -->
+
+    errorIf(condition, key, message)
+    errorUnless(condition, key, message)
+
+Calls `error(key, message)` if the provided condition is truthy (for `errorIf()`) or falsy (for `errorUnless()`).
+
+    // Example: On Validate
+    // Require message to be a certain length
+    errorUnless(this.message && this.message.length > 2, 'message', "Must be at least 2 characters");
+
+### hide() <!-- api -->
+
+    hide(property)
+
+Hides a property from the response.
+
+    // Example: On Get
+    // Don't show private information
+    if (!me || me.id !== this.creatorId) {
+      hide('secret');
+    }
+
+### protect() <!-- api -->
+
+    protect(property)
+
+Prevents a property from being updated. It is strongly recommended you `protect()` any properties that should not be modified after an object is created.
+
+    // Example: On Put
+    // Protect a property
+    protect('createdDate');
+
+<!-- seperate -->
+
+    // Example: On Put
+    // Only the creator can change the title
+    if (!(me && me.id === this.creatorId)) {
+      protect('title');
+    }
+
+
+### changed() <!-- api -->
+
+    changed(property)
+
+Returns whether a property has been updated.
+
+    // Example: On Put
+    // Validate the title when it changes
+    if(changed('title') && this.title.length < 5) {
+      error('title', 'must be over 5 characters');
+    }
+
+### previous <!-- api -->
+
+An `Object` containing the previous values of the item to be updated.
+
+    // Example: On Put
+    if(this.votes < previous.votes) {
+      emit('votes have decreased');
+    }
+
+### emit() <!-- api -->
+
+    emit([userCollection, query], message, [data])
+
+Emits a realtime message to the client.
+
+    // Example: On Post
+    // Alert clients that a new post has been created
+    emit('postCreated', this);
+
+In the front end:
+
+    // Listen for new posts
+    dpd.on('postCreated', function(post) {
+        //do something...
+    });
+
+You can use `userCollection` and `query` parameters to limit the message broadcast to specific users.
+
+    // Example: On Put
+    // Alert the owner that their post has been modified
+    if (me.id !== this.creatorId) {
+      emit(dpd.users, {id: this.creatorId}, 'postModified', this);
+    }
+
+See [Notifying Clients of Changes with Sockets](/docs/collections/notifying-clients.md) for an overview on realtime functionality.
+
+### dpd <!-- ref -->
+
+The entire [dpd.js](/docs/collections/reference/dpd-js.md) library, except for the realtime functions, is available in events. It will also properly bind `this` in callbacks.
+
+    // Example: On Get
+    // If specific query, get comments
+    dpd.comments.get({postId: this.id}, function(results) {
+      this.comments = results;
+    });
+
+<!--seperate-->
+
+    // Example: On Delete
+    // Log item elsewhere
+    dpd.archived.post(this);
+
+Dpd.js will prevent recursive requests if you set the [$limitRecursion](/docs/collections/reference/querying-collections.md#s-$limitRecursion) property. This works by returning `null` from a `dpd` function call that has already been called several times further up in the stack.
+
+    // Example: On Get /recursive
+    // Call self
+    dpd.recursive.get({$limitRecursion: 1}, function(results) {
+        if (results) this.recursive = results;
+    });
+
+<!--seperate-->
+
+    // GET /recursive
+    {
+        "id": "a59551a90be9abd8",
+        "recursive": [
+            {
+                "id": "a59551a90be9abd8"
+            }
+        ]
+    }
+
+
+### internal <!-- api -->
+
+Equal to true if this request has been sent by another script.
+
+    // Example: On GET /posts
+    // Posts with a parent are invisible, but are counted by their parent
+    if (this.parentId && !internal) cancel();
+
+    dpd.posts.get({parentId: this.id}, function(posts) {
+        this.childPosts = posts.length;
+    });
+
+### isRoot <!-- api -->
+
+Equal to true if this request has been authenticated as [root](/docs/collections/reference/http.md#s-Root-Requests) (has the `dpd-ssh-key` header with the appropriate key; such as from the dashboard)
+
+    // Example: On PUT /users
+    // Protect reputation property - should only be calculated by a custom script.
+
+    if (!isRoot) protect('reputation');
+
+
+### console.log() <!-- api -->
+
+    console.log([arguments]...)
+
+Logs the values provided to the command line. Useful for debugging.
+<!--{
+  title: 'Over HTTP',
+  tags: ['reference', 'collection', 'http', 'websockets', 'cors']
+}-->
+
+## Accessing Collections Over HTTP
+
+Deployd exposes an HTTP API to your Collections which can be used by any platform or library that supports HTTP or AJAX. Though it does not strictly adhere to REST, it should also work with most libraries designed for REST.
+
+### Collection API
+
+The examples below use a Collection called `/todos` with the following schema:
+
+- `id`
+- string `title`
+- string `category`
+
+Your Collection is available at the URL you specified. If you are using the default development hostname of `localhost:2403`, for example, the `/todos` collection will be available at `http://localhost:2403/todos`.
+
+#### Requests <!-- ref -->
+
+A request to the Deployd API should include the `Content-Type` header. The following content types are supported:
+
+- `application/json` (recommended)
+- `application/x-www-form-urlencoded` (All values will be parsed as strings)
+
+The `Content-Type` header is not necessary for `GET` or `DELETE` requests which have no body.
+
+#### Responses <!-- ref -->
+
+Deployd will send standard HTTP status codes depending on the results on an operation. If the code is 200 (OK), the request was successful and the result is available in the body as JSON.
+
+If the code is 204 (No Content), the request was successful, but there is no result.
+
+If the code is 400 or greater, it will return the error message formatted as a JSON object:
+
+ - `status` (number): The HTTP status code of the request. Common codes include:
+  - 400 - Bad Request: The request contained invalid data and could not be completed
+  - 401 - Unauthorized: The current session is not authorized to perform that action
+  - 500 - Internal Server Error: Something went wrong on the server
+ - `message` (string): A message describing the error. Not always present.
+ - `errors` (object): A hash of error messages corresponding to the properties of the object that was sent - usually indicates validation errors. Not always present.
+
+Examples of errors:
+  
+    {
+      "status": 401,
+      "message": "You are not allowed to access that collection!"
+    }
+
+<!--...-->
+
+    {
+      "status": 400,
+      "errors": {
+          "title": "Title must be less than 100 characters",
+          "category": "Not a valid category"
+      }
+    }
+
+#### Listing Data <!-- ref -->
+
+To retreive an array of objects in the collection, send a `GET` request to your collection's path:
+
+    GET /todos
+
+The response will be an array of objects: 
+
+    200 OK
+    [
+      {
+        "id": "320d6151a9aad8ce",
+        "title": "Wash the dog",
+        "category": "pets"
+      }, {
+        "id": "320d6151a9aad8ce"
+        "title": "Write autobiography",
+        "category": "writing"
+      }
+    ]
+
+If the collection has no objects, it will be an empty array:
+
+    200 OK
+    []    
+
+#### Querying Data <!-- ref -->
+
+To filter results by the specified query object, send a `GET` request to your collection's path with a query string.  See [Querying Collections](/docs/collections/reference/querying-collections.md) for information on constructing a query.
+
+    GET /todos?category=pets
+
+For more advanced queries, you will need to pass the query string as JSON instead:
+
+    GET /todos?{"category": "pets"}
+
+The response body is an array of objects: 
+
+    200 OK
+    [
+      {
+        "id": "320d6151a9aad8ce",
+        "title": "Wash the dog",
+        "category": "pets"
+      }
+    ]
+
+#### Getting a Specific Object <!-- ref -->
+
+To retrieve a single object by its `id` property, send a `GET` request with the `id` value as the path.
+
+    GET /todos/320d6151a9aad8ce
+
+The response body is the object that you requested:
+
+    200 OK
+    {
+      "id": "320d6151a9aad8ce",
+      "title": "Wash the dog",
+      "category": "pets"
+    }
+
+#### Creating an Object <!-- ref -->
+
+To create an object in the collection, send a `POST` request with the object's properties in the body.
+
+    POST /todos
+    {
+      "title": "Walk the dog"
+    }
+
+The response body is the object that you posted, with any additional calculated properties and the `id`:
+
+    {
+      "id": "91c621a3026ca8ef",
+      "title": "Walk the dog"
+    }
+
+#### Updating an Object <!-- ref -->
+
+To update an object that is already in the collection, send a `POST` or `PUT` request with the `id` value as the path and with the properties you wish to update in the body. It will only change the properties that are provided. It is also possible to incrementally update certain properties; see [Updating Objects in Collections](/docs/collections/reference/updating-objects.md) for details.
+
+    PUT /todos/91c621a3026ca8ef
+    {
+      "title": "Walk the cat"
+    }
+
+<!--...-->
+
+    POST /todos/91c621a3026ca8ef
+    {
+      "title": "Walk the cat"
+    }
+
+You can also omit the `id` in the path if you provide an `id` property in the body:
+
+    PUT /todos
+    {
+      "id": "91c621a3026ca8ef"
+      "title": "Walk the cat"
+    }
+
+Finally, you can provide a query string to ensure that the object you are updating has the correct properties. You must still provide an `id`. This can be useful as a failsafe.
+
+    PUT /todos/91c621a3026ca8ef?category=pets
+    {
+      "title": "Walk the cat"
+    }
+
+The response body is the entire object after the update:
+
+    200 OK  
+    {
+      "id": "91c621a3026ca8ef",
+      "title": "Walk the cat",
+      "category": "pets"
+    }
+
+The `PUT` verb will return an error if the `id` and/or `query` does not match any object in the collection:
+
+    400 Bad Request
+    {
+      "status": 400,
+      "message": "No object exists that matches that query"
+    }
+
+#### Deleting an Object <!-- ref -->
+
+To delete an object from the collection, send a `DELETE` request with the `id` value as a path.
+
+    DELETE /todos/91c621a3026ca8ef
+
+You can also pass a query string to ensure that you are removing the correct object:
+
+    DELETE /todos/91c621a3026ca8ef?title=Walk the dog
+
+You can omit the `id` in the path if you provide it in the query string:
+  
+    DELETE /todos?id=91c621a3026ca8ef&title=Walk the dog
+
+The response body will always be empty.
+
+### Realtime API
+
+Deployd uses [Socket.io](http://socket.io/#home) for its realtime functionality. If you are not using dpd.js, you can use the [Socket.io client library](https://github.com/LearnBoost/socket.io-client/blob/master/dist/socket.io.js). 
+
+    var socket = io.connect('/');
+    socket.on('todos:create', function(todo) {
+      // Do something
+    });
+
+The Socket.io community has created client libraries for other languages and platforms as well.
+
+
+### Root Requests
+
+You can elevate your session to root access by adding the header `dpd-ssh-key`. It must have the value of your app's key (you can find this by typing `dpd showkey` into the command line); although in the `development` environment, the `dpd-ssh-key` header can have any value.
+
+Sending a request as root has several effects. Most notably, you can use the `{$skipEvents: true}` property in either the query string or request body. This will cause events not to run. This is useful for bypassing authentication or validation. 
+
+Your front-end app should never gain root access, and you should never store the app's key in a place where it can be accessed by users, even if they understand the system. This is primarily useful for writing data management utilities for yourself, other developers, and system administrators.
+
+### Examples
+
+The examples below show how to use various JavaScript front-end libraries to access a Collection called `/todos`.
+
+#### [jQuery](http://jquery.com/)
+
+    $.ajax('/todos', {
+      type: "GET",
+      success: function(todos) {
+        // Do something
+      },
+      error: function(xhr) {
+        alert(xhr.responseText);
+      }
+    });
+
+    $.ajax('/todos', {
+      type: "POST",
+      contentType: "application/json",
+      data: JSON.stringify({
+        title: "Walk the dog"
+      }),
+      success: function(todo) {
+        // Do something
+      }, 
+      error: function(xhr) {
+        alert(xhr.responseText);
+      }
+    });
+
+*Note: When providing a request body, jQuery defaults to form encoding. Deployd works best with a JSON body, so you'll need to set the contentType option and manually convert to JSON.*
+
+#### [Backbone.js](http://backbonejs.org)
+
+    var Todo = Backbone.Model.extend({});
+    var Todos = Backbone.Collection.extend({
+      model: Todo,
+      url: "/todos"
+    });
+
+    var todos = new Todos();  
+
+    todos.fetch({
+      success: function(collection, response) {
+        // Do something
+      }, error: function(collection, response) {
+        alert(response);
+      }
+    });
+
+    todos.create({
+      title: "Walk the dog"
+    }, {
+      success: function(collection, response) {
+        // Do something
+      }, error: function(collection, response) {
+        alert(response);
+      }
+    });
+
+
+#### [Angular.js](http://angularjs.org/)
+
+Using [$http](http://docs.angularjs.org/api/ng.$http):
+  
+    function Controller($scope, $http) {
+      $http.get('/todos')
+        .success(function(todos) {
+          $scope.todos = todos;
+        })
+        .error(function(err) {
+          alert(err);
+        });
+
+      $http.post('/todos', {
+          title: "Walk the dog"
+        })
+        .success(function(todo) {
+          // Do something
+        })
+        .error(function(err) {
+          alert(err);
+        });
+    }
+
+Using [ngResource](http://docs.angularjs.org/api/ngResource.$resource):
+
+    var myApp = angular.module('myApp', ['ngResource']);
+
+    myApp.factory('Todos', function($resource) {
+      return $resource('/todos/:todoId', {todoId: '@id'});
+    });
+
+    function Controller($scope, Todos) {
+      $scope.todos = Todos.query(function(response) {
+        // Do something
+      }, function(error) {
+        alert(error);
+      });
+
+      Todos.save({
+        title: "Walk the dog"
+      }, function(todo) {
+        // Do something
+      }, function(error) {
+        alert(error);
+      });
+    }
+
+    myApp.controller('Controller', Controller);
+
+
+### Cross-Origin Requests
+The most common bug when implementing a CORS client for Deploy is to include headers that are not allowed. A client must not send any custom headers besides the following:
+
+
+    Origin, Accept, Accept-Language, Content-Language, Content-Type, Last-Event-ID
+
+This will not work on browsers that do not support Cross-Origin Resource Sharing (namely Internet Explorer 7 and below).
+
+#### Cross-Origin Requests with dpd.js
+When using dpd.js, all the required CORS headers are sent by default to any domain.  You don't have to make any changes to your requests.  dpd.js takes care of it for you.
+
+#### Cross-Origin Requests with jQuery
+
+When using jQuery.ajax() on cross-origin requests the credentials are not sent along with the request automatically.  You have to add them to each ajax() request using the xhrFields parameter.  Here is an example  of login followed by getting some data.
+
+	// Logging a user in.
+	$.ajax({
+	  url: 'http://<domain>:<port>/users/login',
+	  type: "POST",
+	  data: {username:"un", password:"pw"},
+	  cache: false,
+	  xhrFields:{
+	    withCredentials: true
+	  },
+	  success: function(data) {
+	    console.log(data);
+	  },
+	  error: function(xhr) {
+	    console.log(xhr.responseText);
+	  }
+	});
+
+	// On subsequent requests or in the success callback above.  (After having logged in) 
+	$.ajax({
+	  url: 'http://<domain>:<port>/<collection>',
+	  type: "GET",
+	  cache: false,
+	  xhrFields:{
+	    withCredentials: true
+	  },
+	  success: function(data) {
+	    console.log(data);
+	  },
+	  error: function(xhr) {
+	    console.log(xhr.responseText);
+	  }
+	});
+
+### HTTP method override
+
+Provides faux HTTP method support.
+
+Most browsers doesn’t support methods other than “GET” and “POST” when it comes to submitting forms. So It's support something like 'Rails'.
+
+Pass an optional key to use when checking for a method override, othewise defaults to _method. The original method is available via req.originalMethod.
+
+It's support both URL query and POST body
+
+    URL       : ?_method=METHOD_NAME or
+    JSON body : { _method: 'METHOD_NAME' }
+
+$.ajax({
+            type: "POST",
+            url : "/todos/"+ todoId,
+            data: { _method:"DELETE" },
+            success: function(res) {
+#### Ajax Example
+    $.ajax({
+      type : "POST",
+      url  : "/todos/OBJECT_ID"
+      data : { _method:"DELETE" },
+      success: function(todo) {
+        // Object was deleted. response body empty.
+      }, 
+      error: function(xhr) {}
+    });
+
+    or
+
+    $.ajax({
+      type : "POST",
+      url  : "/todos/OBJECT_ID?_method=DELETE",
+      success: function(todo) {
+        // Object was deleted. response body empty.
+      }, 
+      error: function(xhr) {}
+    });
+
+
+<!--{
+	title: 'Querying Collections',
+	tags: ['reference', 'collection']
+}-->
+
+## Querying Collections
+
+### Simple Queries
+
+Collections can be queried over HTTP using the query string.
+
+This example will return all the `posts` with an author "Joe":
+
+	GET /posts?author=Joe	
+
+
+### Advanced Queries
+
+When querying a [Collection](/docs/collections/), you can use special commands to create a more advanced query. 
+
+Deployd supports all of [MongoDB's conditional operators](http://www.mongodb.org/display/DOCS/Advanced+Queries#AdvancedQueries-ConditionalOperators); only the common operators and Deployd's custom commands are documented here.
+
+When using an advanced query in REST, you must pass JSON as the query string, for example:
+	
+	GET /posts?{"likes": {"$gt": 10}}
+
+If you are using dpd.js, this will be handled automatically.
+
+#### Comparison ($gt, $lt, $gte, $lte) <!-- api -->
+
+Compares a Number property to a given value.
+
+ - `$gt` - Greater than
+ - `$lt` - Less than
+ - `$gte` - Greater than or equal to
+ - `$lte` - Less than or equal to
+
+		// Finds all posts with more than 10 likes
+		{
+			likes: {$gt: 10}
+		}
+
+#### $ne (Not Equal) <!-- api -->
+
+The `$ne` command lets you choose a value to exclude. 
+
+	// Get all posts except those posted by Bob
+	{
+		author: {$ne: "Bob"}
+	}
+
+#### $in <!-- api -->
+
+The `$in` command allows you to specify an array of possible matches.
+
+	// Get articles in the "food", "business", and "technology" categories
+	{
+		category: {$in: ["food", "business", "technology"]}
+	}
+
+#### $regex <!-- api -->
+
+The `$regex` command allows you to specify a [regular expression](https://developer.mozilla.org/en-US/docs/JavaScript/Guide/Regular_Expressions) to match a string property.
+
+You can also use the `$options` command to specify regular expression flags.
+
+	// Get usernames that might be email addresses (x@y.z)
+	{
+		"username": {$regex: "[a-z0-9\-]+@[a-z0-9\-]+\.[a-z0-9\-]+", $options: 'i' }
+	}
+
+### Query commands
+
+Query commands apply to the entire query, not just a single property.
+
+#### $fields <!-- api -->
+
+The `$fields` command allows you to include or exclude properties from your results.
+
+    	// Exclude the "email" property
+    	{
+    		$fields: {email: 0}
+    	}
+
+<!--...-->
+
+    	// Only include the "title" property
+    	{
+    		$fields: {title: 1}
+    	}
+
+#### $or <!-- api -->
+
+The `$or` command allows you to specify multiple queries for an object to match in an array.
+
+    // Get all public posts and all posts by a specified user (even if those are private)
+    {
+        $or: [{
+          isPublic: true
+        }, {
+          creator: "Bob"
+        }]
+    }
+
+#### $sort <!-- api -->
+
+The `$sort` command allows you to order your results by the value of a property. The value can be 1 for ascending sort (lowest first; A-Z, 0-10) or -1 for descending (highest first; Z-A, 10-0)
+
+    // Sort posts by likes, descending
+    {
+    	$sort: {likes: -1}
+    }
+
+#### $limit <!-- api -->
+
+The `$limit` command allows you to limit the amount of objects that are returned from a query. This is commonly used for paging, along with `$skip`.
+
+    // Return the top 10 scores
+    {
+    	$sort: {score: -1},
+    	$limit: 10
+    }
+
+#### $skip <!-- api -->
+
+The `$skip` command allows you to exclude a given number of the first objects returned from a query. This is commonly used for paging, along with `$limit`. 
+
+	// Return the third page of posts, with 10 posts per page
+	{
+		$skip: 20,
+		$limit: 10
+	}
+	
+#### $limitRecursion <!-- api -->
+
+The `$limitRecursion` command allows you to override the default recursive limits in Deployd. This is useful when you want to query a very deeply nested structure of data. Otherwise you can still query nested structures, but Deployd will stop the recursion after 2 levels. See the [Collection Relationships guide](/docs/collections/relationships-between-collections.md) for more info.
+<!--{
+  title: 'Updating Objects in Collections',
+  tags: ['reference']
+}-->
+
+## Updating Objects in Collections
+
+When updating an object in a Collection, you can use special modifier commands to more granularly change property values. 
+
+### $inc <!-- api -->
+
+The `$inc` command increments the value of a given Number property.
+
+    // Give a player 5 points
+    {
+      score: {$inc: 5}
+    }
+
+### $push <!-- api -->
+
+The `$push` command adds a value to an Array property.
+
+    // Add a follower to a user by storing their id.
+    {
+      followers: {$push: 'a59551a90be9abd8'}
+    }
+
+### $pushAll <!-- api -->
+
+The `$pushAll` command adds multiple values to an Array property.
+
+    // Add mentions of users
+    {
+      mentions: {
+        $pushAll: ['a59551a90be9abd8', 'd0be45d1445d3809']
+      }
+    }
+
+### $pull <!-- api -->
+
+The `$pull` command removes a value from an Array property.
+
+    // Remove a user from followers
+    {
+      followers: {$pull: 'a59551a90be9abd8'}
+    }
+
+*Note: If there is more than one matching value in the Array, this will remove all of them*
+
+### $pullAll <!-- api -->
+
+The `$pullAll` command removes multiple values from an Array property.
+
+    // Remove multiple users
+    {
+      followers: {$pullAll: ['a59551a90be9abd8', 'd0be45d1445d3809']}
+    }
+
+*Note: This will remove all of the matching values from the Array*<!--{
+  title: 'Relationships Between Collections with Events',
+  tags: ['guide', 'collection', 'events', 'relationships']
+}-->
+
+## Relationships Between Collections with Events
+
+Designing the relationships between the collections in your application is crucial to a useful API. In typical databases, there are very specific ways to implement the relation of objects in one table (or collection) and another. Deployd lets you relate your data however your application requires and is flexible enough to allow you to easily change the way objects are related.
+
+### Types of Relationships
+
+When designing the collections in your application keep in mind the following strategies for relating data. There isn't a single best way to create relationships, so you will have to take into account how data will change in your collections. 
+
+#### Embedding Data
+
+Deployd allows your collection to store complex structures such as nested objects or arrays. This is useful if you want to embed data inside your collection's objects. Keep in mind this is only recommended when the embedded data is not likely to change. For example, a `blog-posts` collection could have an `author` property with a type set to `Object`.
+
+    {
+      "title": "Foo Bar Bat Baz?",
+      "author": {
+        "name": "Joe Bob",
+        "id": "5ef0f7d515764998"
+      }
+    }
+    
+This style of relationship allows users of the collection to display the name of the author without running any other queries. The downside is an update event is required to keep the author name in sync if it ever changes. If your data changes often, this may not be the best approach.
+
+#### Contains Many or One-to-Many
+
+Similarly to storing nested objects in your collection, you can also store arrays of arbitrary JSON. This is useful when you want to setup a **contains** relationship. For example, in a gradebook application, your `classes` collection objects could **contain** `students`.
+
+    {
+      "title": "Language Arts",
+      "students": ["5ef0f7d515764998", "5ef0f7d515764531", ...] 
+    }
+    
+By storing an array of student ids you can easily query classes by student.
+
+    dpd.classes.get({students: '5ef0f7d515764998'}, function(classes) {
+      console.log(classes); // [...] - all the classes the student is in.
+    });
+    
+
+#### Many-to-Many
+
+There are several ways to handle **many-to-many** relationships. The most common way is to include an `Array` property that stores the `id`s of the related objects on both collections.
+
+Continuing with the gradebook example, a student may have many classes, and a class may have many students. The `classes` collection would have a `students` `Array` property containing the student ids and the `students` collection would have a classes `Array` property containing class ids.
+
+This lets you query each collection to get the students in a class or the classes a student is taking by providing the id of the class or student.
+
+    dpd.students.get({id: {$in: class.students}}, function(students) {
+      console.log(students);
+    }); 
+    
+    // or
+    
+    dpd.classes.get({id: {$in: student.classes}}, function(classes) {
+      console.log(classes);
+    });
+    
+If you wanted to include the full objects when querying the API you could implement a simple `GET` event.
+
+    // on GET /students
+
+    if(query.include === 'classes') {
+      dpd.classes.get({id: {$in: student.classes}}, function(classes) {
+        this.classes = classes;
+      });
+    }
+
+Then if you added the `include` param when querying from the browser, a student would come back with all of its classes.
+
+    dpd.students.get({id: '2ef0f7d515764991', include: 'classes'}, fn);
+
+would output
+
+    {
+      "id": "2ef0f7d515764991",
+      "name": "Joe Bob",
+      "classes": [{
+        "id": "...",
+        "title": "Language Arts"
+      }, ...]
+    }
+    
+#### Parent-Child
+
+Some collections contain objects related to other objects in the same collection. A simple example of this is threaded comments. Where a comment can be in reply to another comment, creating a tree-like structure when rendered.
+
+To accomplish this, all you need is a `parent` property containing the `id` of a parent object if one exists. Since Deployd supports recursive queries in a collection's `GET` event, the following works as you would expect.
+
+    // on GET /comments
+    var comment = this;
+
+    dpd.comments.get({parent: comment.id}, function(comments) {
+      if(comments && comments.length) comment.children = comments;
+    });
+    
+Running the following query from the browser would result in a nested structure of all possible comments:
+
+    // from the browser
+    dpd.comments.get({id: '2ef0f7d515764991'}, console.log);
+    
+would output
+
+    {
+      "id": "2ef0f7d515764991"
+      "text": "Hello, World!",
+      "children": [
+        {
+          "id": "tef0f7d515761234",
+          "text": "Foo bar...",
+          "children": [
+            {
+              "id": "ff00f7d515764642",
+              "text": "I agree!"
+            },
+            {
+              "id": "2200f7d51576123",
+              "text": "I do not agree!"
+            },
+          ]
+        }
+      ]
+    }
+
+If you expect that a query could become an infinite loop (or if it already is an infinite loop; a good sign of this is requests that time out before returning a result), put a `$limitRecursion` property on your query with the maximum number of levels to iterate:
+
+    // on GET /comments
+    var comment = this;
+
+    dpd.comments.get({parent: comment.id, $limitRecursion: 10}, function(comments) {
+      if(comments && comments.length) comments.children = comments;
+    });
