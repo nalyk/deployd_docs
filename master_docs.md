@@ -3789,3 +3789,272 @@ You can then go to the `/dashboard` route on the server and type in that key to 
 Since Deployd is itself a node module, you can write your own scripts to run in production instead of using the command line interface. Read the [Building a Custom Run Script](/docs/server/run-script.md) Guide.
 
 *Note: Some hosts do not support WebSockets, so `dpd.on()` may not work correctly on certain deployments.*
+<!--{
+  title: 'Working with Sessions',
+  tags: ['users', 'sessions', 'authentication']
+}-->
+
+## Working with Sessions
+
+### Background
+
+Since HTTP is a stateless protocol, a mechanism is required to tie independent requests and connections to a single remote **session**. In Deployd, sessions are maintained by signing each request with a session id. Currently the only mechanism for signing requests is HTTP cookies.
+
+If a request does not contain a `sid` cookie with an existing session id, a session will be created and set as a cookie on the response.
+
+### Sockets
+
+WebSocket connections are identified and attached to sessions by the cookies sent during the upgrade request of a websocket.
+
+### API
+
+As of `v0.6` the `sessions` API is very limited. In upcoming versions the API will include the following:
+
+- create sessions from modules
+- get sockets by session or user id
+- store arbitrary info on sessions
+- query sessions
+- *remote session api*
+- query sessions by machine ip
+- emit to sessions <!--{
+  title: 'Authenticating Users',
+  tags: ['reference', 'collection', 'users']
+}-->
+
+## Authenticating Users
+
+A User Collection can be accessed in the same ways as a Collection, both with [dpd.js](/docs/collections/accessing-collections.md) and [HTTP](/docs/collections/reference/http.md). It also adds new methods to the API for authentication.
+
+The examples below use a User Collection called `/users` with the following schema:
+
+- `id`
+- `username`
+- `password`
+- string `displayName`
+
+### Logging in <!--ref-->
+
+Log in a user with their username and password. If successful, the browser will save a secure cookie for their session. This request responds with the session details:
+
+    {
+      "id": "s0446b993caaad577a..." //Session id
+      "path": "/users" // The path of the User Collection - useful if you have different types of users.
+      "uid": "ec54ad870eaca95f" //The id of the user
+    }
+
+If the username or password is incorrect, Deployd will respond with a generic error:
+
+    {
+      "status": 401,
+      "message: "bad credentials"
+    }
+
+For security reasons, users should not be informed which of their credentials (username, password, or both) were incorrect.
+
+#### dpd.js
+
+To authenticate a user, use the `.login(credentials, fn)` function, including the `username` and `password` properties in the request body.
+
+    dpd.users.login({
+      username: "johnsmith",
+      password: "password"
+    }, function(result, error) {
+      // Do something
+    });
+
+You can also use the `.exec('login', credentials, fn)` function. This is useful if you have accessed the collection by using `dpd()` as a function and the `login()` function is unavailable.
+
+    dpd('users').exec('login', {
+      username: "johnsmith",
+      password: "password"
+    }, function(result, error) {
+      // Do something
+    });
+
+#### HTTP
+
+To authenticate a user, send a `POST` request to `/login` with `username` and `password` properties in the request body.
+
+    POST /users/login
+    {
+      "username": "johnsmith",
+      "password": "password"
+    }
+
+
+### Logging out <!--ref-->
+
+Logging out will remove the session cookie on the browser and destroy the current session. It does not return a result.
+
+#### dpd.js
+
+To log out a user, use the `.logout(fn)` function.
+
+    dpd.users.logout(function(result, error) {
+      // Do something
+    });
+
+`result` will always be null.
+
+You can also use the `.exec('logout', fn)` function. This is useful if you have accessed the collection by using `dpd()` as a function and the `logout()` function is unavailable.
+
+    dpd('users').exec('logout', function(result, error) {
+      // Do something
+    });
+
+#### HTTP
+
+To log out a user, send a `POST` request to `/logout`. Include the `sid` cookie to identify your session.
+
+    POST /users/logout
+    Cookie: sid=6009c5b070d834a2d336224a93...
+
+The response body will always be empty unless there was an error.
+
+### Getting the current user <!--ref-->
+
+This will return the current user.
+
+    {
+      "id": "2975ff2778493818",
+      "username": "johnsmith",
+      "displayName": "John Smith"
+    }
+
+If there is no current user, it will not return a value.
+
+#### dpd.js
+
+To get the current user, use the `.me(fn)` function. 
+
+    dpd.users.me(function(result, error) {
+      // Do something
+    });
+
+If there is no current user, `result` will be null.
+
+You can also use the `.get('me', fn)` function. This is useful if you have accessed the collection by using `dpd()` as a function and the `me()` function is unavailable.
+
+    dpd('users').get('me', function(result, error) {
+      // Do something
+    });
+
+#### HTTP
+
+To get the current user, send a `GET` request to `/me`. Include the `sid` cookie to identify your session.
+
+    GET /users/me 
+    Cookie: sid=6009c5b070d834a2d336224a93...
+
+If there is no current user, the response body will be blank:
+
+    204 No Content<!--{
+  title: 'Creating User Collections',
+  tags: ['guide', 'collection', 'users']
+}-->
+
+## Creating User Collections
+
+### User Collection
+
+A User Collection extends a [Collection](/docs/collections/creating-collections.md), adding the functionality needed to authenticate users with your app. You can create one by choosing "User Collection" when adding a Resource.
+
+#### Properties
+
+User Collections can have the same properties as a Collection, with two additional non-removable properties:
+
+- `username` - The user's identifier; must be unique.
+- `password` - An encrypted password. It can never be retrieved from the database, only queried against.
+
+In addition to the above constraints, these two properties can only be modified by:
+
+- A session authenticated as that user
+- An internal request, such as a call from an event.
+- A root request<!--{
+  title: 'Microblogging app',
+  tags: ['example', 'collection', 'users', 'dpd.js', 'angular']
+}-->
+
+## Microblogging app
+
+This app demonstrates how to create a microblogging app (similar to Twitter) using User Collections. It also demonstrates how to use dpd.js with AngularJS on the front-end.
+
+The app supports registering, logging in, making posts, and mentioning other users in posts with their @username.
+
+<a href="https://github.com/downloads/deployd/examples/micro-blog.zip" class="btn btn-primary">Download</a> <a href="https://github.com/deployd/examples/tree/master/users/micro-blog" class="btn">View Source</a>
+
+### Useful files
+
+Events:
+
+- [On Validate /posts](https://github.com/deployd/examples/blob/master/users/micro-blog/resources/posts/validate.js) (responsible for calculating the `mentions` property)
+- [On POST /posts](https://github.com/deployd/examples/blob/master/users/micro-blog/resources/posts/post.js)
+
+Front-end:
+
+- [global.js](https://github.com/deployd/examples/blob/master/users/micro-blog/public/js/global.js) (The `Feed` class demonstrates paging)
+- [index.js](https://github.com/deployd/examples/blob/master/users/micro-blog/public/js/index.js)<!--{
+  title: 'Simple Login Form',
+  tags: ['example', 'collection', 'users', 'dpd.js']
+}-->
+
+## Simple Login Form
+
+This app demonstrates how to use the "login", "logout", and "me" functions on a User Collection.
+
+<a href="https://github.com/downloads/deployd/examples/login-form.zip" class="btn btn-primary">Download</a> <a href="https://github.com/deployd/examples/tree/master/users/login-form" class="btn">View Source</a>
+
+### Useful files
+
+- [index.html](https://github.com/deployd/examples/blob/master/users/login-form/public/index.html) (Login form)
+- [register.html](https://github.com/deployd/examples/blob/master/users/login-form/public/register.html)
+- [welcome.html](https://github.com/deployd/examples/blob/master/users/login-form/public/register.html)<!--{
+  title: 'Accessing Users in Events',
+  tags: ['guide', 'collection', 'users', 'events']
+}-->
+
+## Accessing Users in Events with "me"
+
+In any Collection Event, the `me` object refers to the current user. You can use this to secure your app and protect your users. This page lists a few examples of how to use the `me` object effectively.
+
+### Keeping track of an object's creator
+
+    // On Post /todo-lists
+    cancelUnless(me, "You must be logged in to create a todo list", 401);
+
+    this.creatorId = me.id;
+
+### Securing an object
+
+You can ensure that only the creator of an object can update it:
+
+    // On Put /todos
+    if (!(me && me.id === this.creatorId)) {
+      cancel("This is not your todo", 401);
+    }
+
+### Checking for roles
+
+If you store an `array` of `roles` on your User Collection, you can use that to verify that the current user can perform an action:
+
+    // On POST /blog-posts
+    if (!(me && me.roles.indexOf("author") !== -1)) {
+      cancel("You must be an author to create a blog post", 401);
+    }
+
+### Awarding the user points
+
+In a gamification setup, you might want to award the user some points for creating an object:
+
+    // On POST /answers
+    if (me) {
+      dpd.users.put(me.id, {
+        points: {$inc: 1}
+      }, function() {});
+    }
+
+    // On PUT /users
+    // External APIs should not be able to edit the point value
+    if (!internal) {
+      protect('points');
+    }
