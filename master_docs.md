@@ -4058,3 +4058,2272 @@ In a gamification setup, you might want to award the user some points for creati
     if (!internal) {
       protect('points');
     }
+<!--{
+  title: 'Installing a Module',
+  tags: ['installing', 'module']
+}-->
+
+## Installing a Module
+
+### From NPM
+
+Deployd modules are 100% compatible with [node modules](http://npmjs.org). This means you can install a module with [npm](http://npmjs.org) from your project's root directory.
+
+    cd my-dpd-project
+    mkdir -p node_modules
+    npm install my-dpd-module
+
+To find deployd modules available on npm [search for `dpd`](https://encrypted.google.com/search?q=dpd&q=site:npmjs.org&hl=en).
+
+If you need to use a task manager like Grunt or Gulp for your development environement, you'll have to add a package.json as explained [in this page](/docs/server/use-grunt-or-gulp.md).
+
+### From Source
+
+You can also install a module from source by putting it in your project's `node_modules` folder. Even a single file is valid (eg: `/node_modules/foo.js`).
+<!--{
+  title: 'Email',
+  tags: ['resource type', 'module', 'email'],
+  description: 'Send emails from clients or during events.'
+}-->
+
+## Email Resource
+
+This custom resource type allows you to send an email to your users.
+
+The Email resource is built on the [Nodemailer](https://github.com/andris9/Nodemailer) module for Node.js; much of the documentation on this page is taken from their README.
+
+### Installation
+
+In your app's root directory, type `npm install dpd-email` into the command line or [download from source](https://github.com/deployd/dpd-email). This should create a `dpd-email` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Configuration
+
+Before using the email resource, you must go to its Dashboard page and configure it.
+
+These settings are required:
+
+- `host`: The hostname of your SMTP provider.
+- `port`: The port number of your SMTP provider. Defaults to 25; 587 is also common.
+- `ssl`: If checked, use SSL to communicate with your SMTP provider. Unneeded for port 587; as it will automatically upgrade to a secure connection.
+- `username`: The SMTP username for your app.
+- `password`: The SMTP username for your app.
+
+These settings are optional:
+
+- `defaultFromAddress`: A "from" email address to provide by default. If this is not provided, you will need to provide this address in every request.
+- `internalOnly`: If checked, only allow internal requests (such as those from events) to send emails. Recommended for security.
+- `productionOnly`: If checked, attempting to send an email in the `development` environment will simply print it to the Deployd console. 
+
+### Usage
+
+To send an email, call `dpd.email.post(options, callback)` (replacing `email` with your resource name). The `options` argument is an object:
+
+- `from`: The email address of the sender. Required if `defaultFromAddress` is not configured. All e-mail addresses can be plain (`sender@server.com`) or formatted (`Sender Name <sender@server.com>`)
+- `to`: Comma separated list of recipients e-mail addresses that will appear on the To: field
+- `cc`: Comma separated list of recipients e-mail addresses that will appear on the Cc: field
+- `bcc`: Comma separated list of recipients e-mail addresses that will appear on the Bcc: field
+- `subject`: The subject of the e-mail.
+- `text`: The plaintext version of the message
+- `html`: The HTML version of the message
+
+### Example Usage
+
+    // On POST /users
+
+    dpd.email.post({
+      to: this.email,
+      from: "deployd-server@example.com", 
+      subject: "MyApp registration",
+      text: this.username + ",\n\n" +
+            "Thank you for registering for MyApp!"
+    }, function() {});
+<!--{
+  title: 'Event Resource',
+  tags: ['resource type', 'module'],
+  description: 'Create custom events at a specified URL.'
+}-->
+
+## Event Resource
+
+This custom resource type allows you to write an event that will run when the resource's route receives a `GET` or `POST` request.
+
+### Installation
+
+In your app's root directory, type `npm install dpd-event` into the command line or [download the source](https://github.com/deployd/dpd-event). This should create a `dpd-event` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Usage
+
+The `On POST` event will be executed when the resource's route (or a subroute) receives a `POST` request, and likewise with the `On GET` event.
+
+It is strongly recommended that you reserve the `On GET` event for operations that return a value, but don't have any side effects of modifying the database or performing some other operation.  
+
+If your resource is called `/add-follower`, you can trigger its `POST` event from dpd.js:
+
+    dpd.addfollower.post('320d6151a9aad8ce', {userId: '6d75e75d9bd9b8a6'}, function(result, error) {
+      // Do something
+    })
+
+And over HTTP:
+
+    POST /add-follower/320d6151a9aad8ce
+    Content-Type: application/json
+    {
+      "userId": "6d75e75d9bd9b8a6"
+    }
+
+### Event API
+
+In addition to the generic [custom resource event API](/docs/using-modules/reference/event-api.md), the following functions and variables are available while scripting the Event resource:
+
+
+#### setResult(result) <!-- api -->
+
+Sets the response body. The `result` argument can be a string or an object.
+
+    // On GET /top-score
+    dpd.scores.get({$limit: 1, $sort: {score: -1}, function(result) {
+      setResult(result[0]);
+    });
+
+#### url <!-- api -->
+
+The URL of the request, without the resource's base URL. If the resource is called `/add-follower` and receives a request at `/add-follower/320d6151a9aad8ce`, the `url` value will be `/320d6151a9aad8ce`.
+
+    // On GET /statistics
+    // Get the top score
+    if (url === '/top-score') {
+      dpd.scores.get({$limit: 1, $sort: {score: -1}, function(result) {
+        setResult(result[0]);
+      });
+    }
+
+#### parts <!-- api -->
+
+An array of the parts of the url, separated by `/`. If the resource is called `/add-follower` and receives a request at `/add-follower/320d6151a9aad8ce/6d75e75d9bd9b8a6`, the `parts` value will be `['320d6151a9aad8ce', '6d75e75d9bd9b8a6']`.
+
+    // On POST /add-score
+    // Give the specified user (/add-score/:userId) 5 points
+    var userId = parts[0];
+    if (!userId) cancel("You must provide a user");
+
+    dpd.users.put({id: userId}, {score: {$inc: 5}}, function(result, err) {
+      if (err) cancel(err);
+    });
+
+#### query <!-- api -->
+
+The query string object.
+  
+    // On GET /sum
+    // Return the sum of the a and b properties (/sum?a=5&b=1)
+
+    setResult(query.a + query.b);
+
+#### body <!-- api -->
+
+The body of the request.
+
+    // On POST /sum
+    // Return the sum of the a and b properties {a: 5, b: 1}
+
+    setResult(body.a + body.b);<!--{
+	title: 'Importer',
+	tags: ['resource type', 'module', 'import'],
+  description: 'Import collections from existing MongoDBs.'
+}-->
+
+## Importer
+
+This custom resource type allows you to import collections from an existing MongoDB.
+
+### Installation
+
+Create a project. Then install the dpd-importer module.
+
+    dpd create my-app
+    cd my-app
+    mkdir node_modules
+    npm install dpd-importer
+    dpd -d
+    
+In your dashboard - click the green new resource button and choose **Importer**.
+
+Give the new resource the default name "/importer". Open it by clicking "IMPOTER" in the left menu.
+
+Enter the information of your old MongoDB server. Clicking on **Start Import** will start creating deployd collections from data in the provided db by streaming data directly from the old db into your new deployd db. The importer will do its best to create properties based on the types it infers from your data.<!--{
+	title: 'S3 Bucket',
+	tags: ['resource type', 'module', 's3'],
+  description: 'Store and retrieve files from an S3 Bucket.'
+}-->
+
+## S3 Bucket Resource
+
+This custom resource type allows you to store and retrieve files from an [Amazon S3](http://aws.amazon.com/s3/) bucket.
+
+### Installation
+
+In your app's root directory, type `npm install s3-bucket-resource` into the command line or [download the source](https://github.com/deployd/dpd-s3). This should create a `dpd-s3` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Configuration
+
+Before you can use the S3 Bucket resource, you must set the three properties on its "Config" page:
+
+- `bucket`: The name of your S3 Bucket
+- `key`: The security key of your S3 Bucket
+- `secret`: The secret key of your S3 Bucket
+
+### Usage
+
+#### Upload <!-- ref -->
+
+There are two ways to upload files. Both ways require HTTP access; you cannot upload files with dpd.js.
+
+##### Direct upload 
+
+Send a `POST` request to the url where you want to upload the file, including the file name. Set the `Content-Type` header to that of the file you are uploading and pass the file's content in the request body.
+
+It will return a `200 OK` if the upload was successful. If there was an error, it will return the error directly from S3. This is usually in XML; see [Amazon's S3 documentation](http://aws.amazon.com/documentation/s3/) for information.
+
+	POST /my-bucket/README.txt
+	Content-Type: text/plain
+	Hello, world!
+
+	200 OK
+
+##### Multipart upload
+
+You can upload files directly from a browser using the `multipart/form-data` type and the `<input type="file" />` tag:
+
+	<form action="/installer-downloads" enctype="multipart/form-data" method="post">
+		<input type="file" name="upload" multiple="multiple" />
+		<button type="submit">Upload</button>
+	</form>
+
+To send a multipart request manually, send a `POST` request to the url where you want to upload the file, *not* including the file name. The `Content-Type` header must be `multipart/form-data`. Set the request body according to the [multipart/form-data standard](http://www.w3.org/TR/html401/interact/forms.html#h-17.13.4.2).
+
+If the upload was successful and there is a `Referrer` header on the request (e.g. if it was submitted as a form from a browser), the response will redirect to the referrer. Otherwise, it will return `200 OK`. If there was an error, it will return the error directly from S3. This is usually in XML; see [Amazon's S3 documentation](http://aws.amazon.com/documentation/s3/) for information.
+
+#### Retrieving files <!-- ref -->
+
+To download a file, send a `GET` request to the url where the file exists. 
+
+	GET /my-bucket/README.txt
+
+	200 OK
+	Content-Type: text/plain
+	Hello, world!
+
+#### Deleting files <!-- ref -->
+
+To delete a file, send a `DELETE` request to the url where the file exists.
+
+	DELETE /my-bucket/README.txt
+
+	200 OK
+
+This can also be done with dpd.js:
+
+	dpd.mybucket.del('README.txt', function(response, error) {
+		// Do something
+	});
+
+### Events
+
+The S3 Bucket Resource has three events:
+
+- `On Upload`: Executed before a file is uploaded to S3.
+- `On Get`: Executed before a file is downloaded from S3.
+- `On Delete`: Executed before a file is deleted.
+
+### Event API
+
+#### url <!-- api -->
+
+The URL of the request. Does not include the resource's name; if the request URL is `/my-bucket/README.txt`, the `url` property will be `/README.txt`.
+
+#### fileSize  <!-- api -->
+
+Only available in `On Upload`. The size of the file, in bytes.
+
+		// On Upload
+		// Set a limit on file size
+		if (fileSize > 1024*1024*1024) { // 1GB
+			cancel("File is too big; limit is 1GB");
+		}
+
+#### fileName <!-- api -->
+
+Only available in `On Upload`. The name of the file that is being uploaded.
+
+		// On Upload
+		dpd.uploads.post({ filename: fileName, creator: me.id }, function() {})
+<!--{
+	title: 'Dpd.js for Custom Resources',
+	tags: ['dpd.js', 'custom', 'resource']
+}-->
+
+## Dpd.js for Custom Resources
+
+Because Custom Resource Types can specify APIs very different from a Collection, Dpd.js acts as a generic HTTP library for Custom Resources.
+
+### Accessing the Resource
+
+The API for your Resource is automatically generated as `dpd.[resource]`.
+
+Examples:
+
+	dpd.emails
+	dpd.addfollower
+	dpd.uploads
+
+*Note: If your Resource name has a dash in it (e.g. `/add-follower`), the dash is removed when accessing it in this way (e.g. `dpd.addfollower`).*
+
+You can also access your resource by using `dpd(resourceName)` as a function.
+
+Examples:
+
+	dpd('emails')
+	dpd('add-follower')
+	dpd('uploads')
+
+### Callbacks
+
+Every function in the Dpd.js API takes a callback function (represented by `fn` in the docs) with the signature `function(result, error)`.
+
+The callback will be executed asynchronously when the API has received a response from the server.
+
+The `result` argument differs depending on the function. If the result failed, it will be `null` and the `error` argument will contain the error message.
+
+The `error` argument, if there was an error, is an object:
+
+ - `status` (number): The HTTP status code of the request. Common codes include:
+	- 400 - Bad Request: The request contained invalid data and could not be completed
+	- 401 - Unauthorized: The current session is not authorized to perform that action
+	- 500 - Internal Server Error: Something went wrong on the server
+ - `message` (string): A message describing the error. Not always present.
+ - `errors` (object): A hash of error messages corresponding to the properties of the object that was sent - usually indicates validation errors. Not always present.
+
+Examples of errors:
+
+	{
+		"status": 401,
+		"message": "You are not allowed to access that resource!"
+	}
+
+<!--...-->
+
+	{
+		"status": 400,
+		"errors": {
+			"title": "Title must be less than 100 characters",
+			"category": "Not a valid category"
+		}
+	}
+
+
+
+#### Promises
+
+Every function in the collection API returns a promise.
+We use the [`ayepromise` library](https://github.com/cburgmer/ayepromise) (which follows the [Promises/A+ 1.1 specs](https://promisesaplus.com/)).
+To learn how to use promises, please, refer [to this article](http://www.html5rocks.com/en/tutorials/es6/promises).
+
+The first callback contains the same `result` same with the classic callbacks.
+The second callback contains the `error` object as described above.
+Here's an example to use promises within dpd.js:
+
+	dpd.todos.post({message: "Hello world"}).then(function(todo) {
+		// do something with todo
+		console.log(todo); // display {id: "###", message: 'Hello world'}
+	}, function(err) {
+		// do something with the error
+		console.log(err); // display an error if the request failed
+	});
+
+<!--...-->
+
+	dpd.todos.get('1234324324').then(function(todo) {
+		// do something with todo
+		console.log(todo); // display {id: "###", message: 'Hello world'}
+	}, function(err) {
+		// do something with the error
+		console.log(err.errors.message); // display the error message
+	});
+
+
+### get() <!-- api -->
+
+	dpd.[resource].get([func], [path], [query], fn)
+
+Makes a GET HTTP request at the URL `/<resource>/<func>/<path>`, using the `query` object as the query string if provided.
+
+- `func` - A special identifier, i.e. `/me`.
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON.
+- `fn` - Callback `function(result, error)`.
+
+###  post() <!-- api -->
+
+	dpd.[resource].post([path], [query], body, fn)
+
+Makes a POST HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided and `body` as the request body.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON.
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### put() <!-- api -->
+
+	dpd.[resource].put([path], [query], body, fn)
+
+Makes a PUT HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided and `body` as the request body.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON and passed as the `q` parameter.
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### del() <!-- api -->
+
+	dpd.[resource].del([path], [query], fn)
+
+Makes a DELETE HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON and passed as the `q` parameter.
+- `fn` - Callback `function(result, error)`.
+
+
+### exec() <!-- api -->
+
+	dpd.[resource].exec(func, [path], [body], fn)
+
+Makes an RPC-style POST HTTP request at the URL `/<resource>/<func>/<path>`. Useful for functions that don't make sense in REST-style APIs, such as `/users/login`.
+
+- `func` - The name of the function to call
+- `path` - An identifier for a particular object, usually the id
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### Realtime API
+
+The Generic Realtime API behaves the same way as the [Collection Realtime API](/docs/collections/reference/dpd-js.md#s-Realtime-API).
+<!--{
+  title: 'Event API for Custom Resources',
+  tags: ['event', 'custom', 'resource']
+}-->
+
+## Event API for Custom Resources
+
+### Background
+
+Custom Resources may load **event scripts** to allow you to inject business logic during requests to the resource. For example, the collection resource exposes an event called *validate*. Given the following todo resource folder:
+
+    /my-app
+      /resources
+        /todos
+          validate.js
+
+The collection resource would load the contents of `validate.js` as the `validate` event.
+
+### Default Event Script Domain
+
+Event scripts do not share a global scope with other modules in your app. Instead each time an event script is run, a new scope is created for it.
+
+The following functions and objects are available to all event scripts.
+
+#### ctx <!-- ctx -->
+
+The context of the request. This object contains everything from the request (request, response, body, headers, etc...):
+
+    // Example:
+    if (ctx && ctx.req && ctx.req.headers && ctx.req.headers.host !== '192.168.178.34:2403') {
+      cancel("You are not authorized to do that", 401);
+    }
+
+The entire object is [available as a gist here](https://gist.github.com/NicolasRitouet/2fc5dd20f3af7dc7e192).
+
+#### me <!-- api -->
+
+The current user if one exists on the current `Context`.
+
+#### isMe() <!-- api -->
+
+    isMe(id)
+
+Returns true if the current user (`me`) matches the provided `id`.
+
+#### this <!-- api -->
+
+If the resource does not implement a custom domain, this will be an empty object. Otherwise `this` usually refers to the current domain's instance (eg. an object in a collection).
+
+#### cancel() <!-- api -->
+
+    cancel(message, [statusCode])
+
+Stops the current request with the provided error message and HTTP status code. Status code defaults to `400`.
+
+#### cancelIf(), cancelUnless() <!-- api -->
+
+    cancelIf(condition, message, [statusCode])
+    cancelUnless(condition, message, [statusCode])
+
+Calls `cancel(message, statusCode)` if the provided condition is truthy (for `cancelIf()`) or falsy (for `cancelUnless`).
+
+#### internal <!-- api -->
+
+A boolean property, true if this request has been initiated by another script.
+
+#### isRoot <!-- api -->
+
+A boolean property, true if this request is authenticated as root (from the dashboard or a custom script).
+
+#### query <!-- api -->
+
+The current HTTP query. (eg ?foo=bar - query would be {foo: 'bar'}).
+
+#### emit() <!-- api -->
+
+    emit([userCollection, query], message, [data])
+
+Emits a realtime message to the client. You can use `userCollection` and `query` parameters to limit the message broadcast to specific users.
+
+#### console <!-- api -->
+
+Support for console.log() and other console methods.
+<!--{
+  title: 'Using a Custom Resource Type',
+  tags: ['resource type', 'module']
+}-->
+
+### Using a Custom Resource Type
+
+Deployd modules can register new *Resource Types*, which can be created with a route and configured per instance. Deployd comes with two built-in Resource Types: "Collection" and "User Collection". 
+
+To add more Resource Types, you can [install](/docs/using-modules/installing-modules.md) a module that includes one. The examples on this page use the [Event resource](/docs/using-modules/official/event.md).
+
+#### Creating an instance of a Custom Resource Type
+
+Once the module is properly installed, you can add the custom resource just like a Collection. Custom Resources will usually have an asterisk <i class="icon-asterisk"></i> icon. 
+
+![Creating an Event resource](/tutorials/resource-type/creating-custom-resource.png)
+
+*Note: After adding any module, you will have to restart the Deployd server to see its effects. If you don't see the custom resource type in the list, you may have to restart the server and refresh the dashboard.*
+
+#### Configuring a Custom Resource Type
+
+See the documentation of your Custom Resource Type module for details on configuration options. Most custom resource types implement a "Config" page and an "Events" page.
+
+The "Config" page can take different forms. For very basic modules, it's often a simple JSON editor where you can enter optional values. Others will list their available configuration values in a form.
+
+The "Events" page is similar to the Collection "Events" page.
+
+Depending on the complexity of the custom resource type, it may have different configuration pages.<!--{
+  title: 'Installing a Module',
+  tags: ['installing', 'module']
+}-->
+
+## Installing a Module
+
+### From NPM
+
+Deployd modules are 100% compatible with [node modules](http://npmjs.org). This means you can install a module with [npm](http://npmjs.org) from your project's root directory.
+
+    cd my-dpd-project
+    mkdir -p node_modules
+    npm install my-dpd-module
+
+To find deployd modules available on npm [search for `dpd`](https://encrypted.google.com/search?q=dpd&q=site:npmjs.org&hl=en).
+
+If you need to use a task manager like Grunt or Gulp for your development environement, you'll have to add a package.json as explained [in this page](/docs/server/use-grunt-or-gulp.md).
+
+### From Source
+
+You can also install a module from source by putting it in your project's `node_modules` folder. Even a single file is valid (eg: `/node_modules/foo.js`).
+<!--{
+  title: 'Email',
+  tags: ['resource type', 'module', 'email'],
+  description: 'Send emails from clients or during events.'
+}-->
+
+## Email Resource
+
+This custom resource type allows you to send an email to your users.
+
+The Email resource is built on the [Nodemailer](https://github.com/andris9/Nodemailer) module for Node.js; much of the documentation on this page is taken from their README.
+
+### Installation
+
+In your app's root directory, type `npm install dpd-email` into the command line or [download from source](https://github.com/deployd/dpd-email). This should create a `dpd-email` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Configuration
+
+Before using the email resource, you must go to its Dashboard page and configure it.
+
+These settings are required:
+
+- `host`: The hostname of your SMTP provider.
+- `port`: The port number of your SMTP provider. Defaults to 25; 587 is also common.
+- `ssl`: If checked, use SSL to communicate with your SMTP provider. Unneeded for port 587; as it will automatically upgrade to a secure connection.
+- `username`: The SMTP username for your app.
+- `password`: The SMTP username for your app.
+
+These settings are optional:
+
+- `defaultFromAddress`: A "from" email address to provide by default. If this is not provided, you will need to provide this address in every request.
+- `internalOnly`: If checked, only allow internal requests (such as those from events) to send emails. Recommended for security.
+- `productionOnly`: If checked, attempting to send an email in the `development` environment will simply print it to the Deployd console. 
+
+### Usage
+
+To send an email, call `dpd.email.post(options, callback)` (replacing `email` with your resource name). The `options` argument is an object:
+
+- `from`: The email address of the sender. Required if `defaultFromAddress` is not configured. All e-mail addresses can be plain (`sender@server.com`) or formatted (`Sender Name <sender@server.com>`)
+- `to`: Comma separated list of recipients e-mail addresses that will appear on the To: field
+- `cc`: Comma separated list of recipients e-mail addresses that will appear on the Cc: field
+- `bcc`: Comma separated list of recipients e-mail addresses that will appear on the Bcc: field
+- `subject`: The subject of the e-mail.
+- `text`: The plaintext version of the message
+- `html`: The HTML version of the message
+
+### Example Usage
+
+    // On POST /users
+
+    dpd.email.post({
+      to: this.email,
+      from: "deployd-server@example.com", 
+      subject: "MyApp registration",
+      text: this.username + ",\n\n" +
+            "Thank you for registering for MyApp!"
+    }, function() {});
+<!--{
+  title: 'Event Resource',
+  tags: ['resource type', 'module'],
+  description: 'Create custom events at a specified URL.'
+}-->
+
+## Event Resource
+
+This custom resource type allows you to write an event that will run when the resource's route receives a `GET` or `POST` request.
+
+### Installation
+
+In your app's root directory, type `npm install dpd-event` into the command line or [download the source](https://github.com/deployd/dpd-event). This should create a `dpd-event` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Usage
+
+The `On POST` event will be executed when the resource's route (or a subroute) receives a `POST` request, and likewise with the `On GET` event.
+
+It is strongly recommended that you reserve the `On GET` event for operations that return a value, but don't have any side effects of modifying the database or performing some other operation.  
+
+If your resource is called `/add-follower`, you can trigger its `POST` event from dpd.js:
+
+    dpd.addfollower.post('320d6151a9aad8ce', {userId: '6d75e75d9bd9b8a6'}, function(result, error) {
+      // Do something
+    })
+
+And over HTTP:
+
+    POST /add-follower/320d6151a9aad8ce
+    Content-Type: application/json
+    {
+      "userId": "6d75e75d9bd9b8a6"
+    }
+
+### Event API
+
+In addition to the generic [custom resource event API](/docs/using-modules/reference/event-api.md), the following functions and variables are available while scripting the Event resource:
+
+
+#### setResult(result) <!-- api -->
+
+Sets the response body. The `result` argument can be a string or an object.
+
+    // On GET /top-score
+    dpd.scores.get({$limit: 1, $sort: {score: -1}, function(result) {
+      setResult(result[0]);
+    });
+
+#### url <!-- api -->
+
+The URL of the request, without the resource's base URL. If the resource is called `/add-follower` and receives a request at `/add-follower/320d6151a9aad8ce`, the `url` value will be `/320d6151a9aad8ce`.
+
+    // On GET /statistics
+    // Get the top score
+    if (url === '/top-score') {
+      dpd.scores.get({$limit: 1, $sort: {score: -1}, function(result) {
+        setResult(result[0]);
+      });
+    }
+
+#### parts <!-- api -->
+
+An array of the parts of the url, separated by `/`. If the resource is called `/add-follower` and receives a request at `/add-follower/320d6151a9aad8ce/6d75e75d9bd9b8a6`, the `parts` value will be `['320d6151a9aad8ce', '6d75e75d9bd9b8a6']`.
+
+    // On POST /add-score
+    // Give the specified user (/add-score/:userId) 5 points
+    var userId = parts[0];
+    if (!userId) cancel("You must provide a user");
+
+    dpd.users.put({id: userId}, {score: {$inc: 5}}, function(result, err) {
+      if (err) cancel(err);
+    });
+
+#### query <!-- api -->
+
+The query string object.
+  
+    // On GET /sum
+    // Return the sum of the a and b properties (/sum?a=5&b=1)
+
+    setResult(query.a + query.b);
+
+#### body <!-- api -->
+
+The body of the request.
+
+    // On POST /sum
+    // Return the sum of the a and b properties {a: 5, b: 1}
+
+    setResult(body.a + body.b);<!--{
+	title: 'Importer',
+	tags: ['resource type', 'module', 'import'],
+  description: 'Import collections from existing MongoDBs.'
+}-->
+
+## Importer
+
+This custom resource type allows you to import collections from an existing MongoDB.
+
+### Installation
+
+Create a project. Then install the dpd-importer module.
+
+    dpd create my-app
+    cd my-app
+    mkdir node_modules
+    npm install dpd-importer
+    dpd -d
+    
+In your dashboard - click the green new resource button and choose **Importer**.
+
+Give the new resource the default name "/importer". Open it by clicking "IMPOTER" in the left menu.
+
+Enter the information of your old MongoDB server. Clicking on **Start Import** will start creating deployd collections from data in the provided db by streaming data directly from the old db into your new deployd db. The importer will do its best to create properties based on the types it infers from your data.<!--{
+	title: 'S3 Bucket',
+	tags: ['resource type', 'module', 's3'],
+  description: 'Store and retrieve files from an S3 Bucket.'
+}-->
+
+## S3 Bucket Resource
+
+This custom resource type allows you to store and retrieve files from an [Amazon S3](http://aws.amazon.com/s3/) bucket.
+
+### Installation
+
+In your app's root directory, type `npm install s3-bucket-resource` into the command line or [download the source](https://github.com/deployd/dpd-s3). This should create a `dpd-s3` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Configuration
+
+Before you can use the S3 Bucket resource, you must set the three properties on its "Config" page:
+
+- `bucket`: The name of your S3 Bucket
+- `key`: The security key of your S3 Bucket
+- `secret`: The secret key of your S3 Bucket
+
+### Usage
+
+#### Upload <!-- ref -->
+
+There are two ways to upload files. Both ways require HTTP access; you cannot upload files with dpd.js.
+
+##### Direct upload 
+
+Send a `POST` request to the url where you want to upload the file, including the file name. Set the `Content-Type` header to that of the file you are uploading and pass the file's content in the request body.
+
+It will return a `200 OK` if the upload was successful. If there was an error, it will return the error directly from S3. This is usually in XML; see [Amazon's S3 documentation](http://aws.amazon.com/documentation/s3/) for information.
+
+	POST /my-bucket/README.txt
+	Content-Type: text/plain
+	Hello, world!
+
+	200 OK
+
+##### Multipart upload
+
+You can upload files directly from a browser using the `multipart/form-data` type and the `<input type="file" />` tag:
+
+	<form action="/installer-downloads" enctype="multipart/form-data" method="post">
+		<input type="file" name="upload" multiple="multiple" />
+		<button type="submit">Upload</button>
+	</form>
+
+To send a multipart request manually, send a `POST` request to the url where you want to upload the file, *not* including the file name. The `Content-Type` header must be `multipart/form-data`. Set the request body according to the [multipart/form-data standard](http://www.w3.org/TR/html401/interact/forms.html#h-17.13.4.2).
+
+If the upload was successful and there is a `Referrer` header on the request (e.g. if it was submitted as a form from a browser), the response will redirect to the referrer. Otherwise, it will return `200 OK`. If there was an error, it will return the error directly from S3. This is usually in XML; see [Amazon's S3 documentation](http://aws.amazon.com/documentation/s3/) for information.
+
+#### Retrieving files <!-- ref -->
+
+To download a file, send a `GET` request to the url where the file exists. 
+
+	GET /my-bucket/README.txt
+
+	200 OK
+	Content-Type: text/plain
+	Hello, world!
+
+#### Deleting files <!-- ref -->
+
+To delete a file, send a `DELETE` request to the url where the file exists.
+
+	DELETE /my-bucket/README.txt
+
+	200 OK
+
+This can also be done with dpd.js:
+
+	dpd.mybucket.del('README.txt', function(response, error) {
+		// Do something
+	});
+
+### Events
+
+The S3 Bucket Resource has three events:
+
+- `On Upload`: Executed before a file is uploaded to S3.
+- `On Get`: Executed before a file is downloaded from S3.
+- `On Delete`: Executed before a file is deleted.
+
+### Event API
+
+#### url <!-- api -->
+
+The URL of the request. Does not include the resource's name; if the request URL is `/my-bucket/README.txt`, the `url` property will be `/README.txt`.
+
+#### fileSize  <!-- api -->
+
+Only available in `On Upload`. The size of the file, in bytes.
+
+		// On Upload
+		// Set a limit on file size
+		if (fileSize > 1024*1024*1024) { // 1GB
+			cancel("File is too big; limit is 1GB");
+		}
+
+#### fileName <!-- api -->
+
+Only available in `On Upload`. The name of the file that is being uploaded.
+
+		// On Upload
+		dpd.uploads.post({ filename: fileName, creator: me.id }, function() {})
+<!--{
+	title: 'Dpd.js for Custom Resources',
+	tags: ['dpd.js', 'custom', 'resource']
+}-->
+
+## Dpd.js for Custom Resources
+
+Because Custom Resource Types can specify APIs very different from a Collection, Dpd.js acts as a generic HTTP library for Custom Resources.
+
+### Accessing the Resource
+
+The API for your Resource is automatically generated as `dpd.[resource]`.
+
+Examples:
+
+	dpd.emails
+	dpd.addfollower
+	dpd.uploads
+
+*Note: If your Resource name has a dash in it (e.g. `/add-follower`), the dash is removed when accessing it in this way (e.g. `dpd.addfollower`).*
+
+You can also access your resource by using `dpd(resourceName)` as a function.
+
+Examples:
+
+	dpd('emails')
+	dpd('add-follower')
+	dpd('uploads')
+
+### Callbacks
+
+Every function in the Dpd.js API takes a callback function (represented by `fn` in the docs) with the signature `function(result, error)`.
+
+The callback will be executed asynchronously when the API has received a response from the server.
+
+The `result` argument differs depending on the function. If the result failed, it will be `null` and the `error` argument will contain the error message.
+
+The `error` argument, if there was an error, is an object:
+
+ - `status` (number): The HTTP status code of the request. Common codes include:
+	- 400 - Bad Request: The request contained invalid data and could not be completed
+	- 401 - Unauthorized: The current session is not authorized to perform that action
+	- 500 - Internal Server Error: Something went wrong on the server
+ - `message` (string): A message describing the error. Not always present.
+ - `errors` (object): A hash of error messages corresponding to the properties of the object that was sent - usually indicates validation errors. Not always present.
+
+Examples of errors:
+
+	{
+		"status": 401,
+		"message": "You are not allowed to access that resource!"
+	}
+
+<!--...-->
+
+	{
+		"status": 400,
+		"errors": {
+			"title": "Title must be less than 100 characters",
+			"category": "Not a valid category"
+		}
+	}
+
+
+
+#### Promises
+
+Every function in the collection API returns a promise.
+We use the [`ayepromise` library](https://github.com/cburgmer/ayepromise) (which follows the [Promises/A+ 1.1 specs](https://promisesaplus.com/)).
+To learn how to use promises, please, refer [to this article](http://www.html5rocks.com/en/tutorials/es6/promises).
+
+The first callback contains the same `result` same with the classic callbacks.
+The second callback contains the `error` object as described above.
+Here's an example to use promises within dpd.js:
+
+	dpd.todos.post({message: "Hello world"}).then(function(todo) {
+		// do something with todo
+		console.log(todo); // display {id: "###", message: 'Hello world'}
+	}, function(err) {
+		// do something with the error
+		console.log(err); // display an error if the request failed
+	});
+
+<!--...-->
+
+	dpd.todos.get('1234324324').then(function(todo) {
+		// do something with todo
+		console.log(todo); // display {id: "###", message: 'Hello world'}
+	}, function(err) {
+		// do something with the error
+		console.log(err.errors.message); // display the error message
+	});
+
+
+### get() <!-- api -->
+
+	dpd.[resource].get([func], [path], [query], fn)
+
+Makes a GET HTTP request at the URL `/<resource>/<func>/<path>`, using the `query` object as the query string if provided.
+
+- `func` - A special identifier, i.e. `/me`.
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON.
+- `fn` - Callback `function(result, error)`.
+
+###  post() <!-- api -->
+
+	dpd.[resource].post([path], [query], body, fn)
+
+Makes a POST HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided and `body` as the request body.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON.
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### put() <!-- api -->
+
+	dpd.[resource].put([path], [query], body, fn)
+
+Makes a PUT HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided and `body` as the request body.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON and passed as the `q` parameter.
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### del() <!-- api -->
+
+	dpd.[resource].del([path], [query], fn)
+
+Makes a DELETE HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON and passed as the `q` parameter.
+- `fn` - Callback `function(result, error)`.
+
+
+### exec() <!-- api -->
+
+	dpd.[resource].exec(func, [path], [body], fn)
+
+Makes an RPC-style POST HTTP request at the URL `/<resource>/<func>/<path>`. Useful for functions that don't make sense in REST-style APIs, such as `/users/login`.
+
+- `func` - The name of the function to call
+- `path` - An identifier for a particular object, usually the id
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### Realtime API
+
+The Generic Realtime API behaves the same way as the [Collection Realtime API](/docs/collections/reference/dpd-js.md#s-Realtime-API).
+<!--{
+  title: 'Event API for Custom Resources',
+  tags: ['event', 'custom', 'resource']
+}-->
+
+## Event API for Custom Resources
+
+### Background
+
+Custom Resources may load **event scripts** to allow you to inject business logic during requests to the resource. For example, the collection resource exposes an event called *validate*. Given the following todo resource folder:
+
+    /my-app
+      /resources
+        /todos
+          validate.js
+
+The collection resource would load the contents of `validate.js` as the `validate` event.
+
+### Default Event Script Domain
+
+Event scripts do not share a global scope with other modules in your app. Instead each time an event script is run, a new scope is created for it.
+
+The following functions and objects are available to all event scripts.
+
+#### ctx <!-- ctx -->
+
+The context of the request. This object contains everything from the request (request, response, body, headers, etc...):
+
+    // Example:
+    if (ctx && ctx.req && ctx.req.headers && ctx.req.headers.host !== '192.168.178.34:2403') {
+      cancel("You are not authorized to do that", 401);
+    }
+
+The entire object is [available as a gist here](https://gist.github.com/NicolasRitouet/2fc5dd20f3af7dc7e192).
+
+#### me <!-- api -->
+
+The current user if one exists on the current `Context`.
+
+#### isMe() <!-- api -->
+
+    isMe(id)
+
+Returns true if the current user (`me`) matches the provided `id`.
+
+#### this <!-- api -->
+
+If the resource does not implement a custom domain, this will be an empty object. Otherwise `this` usually refers to the current domain's instance (eg. an object in a collection).
+
+#### cancel() <!-- api -->
+
+    cancel(message, [statusCode])
+
+Stops the current request with the provided error message and HTTP status code. Status code defaults to `400`.
+
+#### cancelIf(), cancelUnless() <!-- api -->
+
+    cancelIf(condition, message, [statusCode])
+    cancelUnless(condition, message, [statusCode])
+
+Calls `cancel(message, statusCode)` if the provided condition is truthy (for `cancelIf()`) or falsy (for `cancelUnless`).
+
+#### internal <!-- api -->
+
+A boolean property, true if this request has been initiated by another script.
+
+#### isRoot <!-- api -->
+
+A boolean property, true if this request is authenticated as root (from the dashboard or a custom script).
+
+#### query <!-- api -->
+
+The current HTTP query. (eg ?foo=bar - query would be {foo: 'bar'}).
+
+#### emit() <!-- api -->
+
+    emit([userCollection, query], message, [data])
+
+Emits a realtime message to the client. You can use `userCollection` and `query` parameters to limit the message broadcast to specific users.
+
+#### console <!-- api -->
+
+Support for console.log() and other console methods.
+<!--{
+  title: 'Using a Custom Resource Type',
+  tags: ['resource type', 'module']
+}-->
+
+### Using a Custom Resource Type
+
+Deployd modules can register new *Resource Types*, which can be created with a route and configured per instance. Deployd comes with two built-in Resource Types: "Collection" and "User Collection". 
+
+To add more Resource Types, you can [install](/docs/using-modules/installing-modules.md) a module that includes one. The examples on this page use the [Event resource](/docs/using-modules/official/event.md).
+
+#### Creating an instance of a Custom Resource Type
+
+Once the module is properly installed, you can add the custom resource just like a Collection. Custom Resources will usually have an asterisk <i class="icon-asterisk"></i> icon. 
+
+![Creating an Event resource](/tutorials/resource-type/creating-custom-resource.png)
+
+*Note: After adding any module, you will have to restart the Deployd server to see its effects. If you don't see the custom resource type in the list, you may have to restart the server and refresh the dashboard.*
+
+#### Configuring a Custom Resource Type
+
+See the documentation of your Custom Resource Type module for details on configuration options. Most custom resource types implement a "Config" page and an "Events" page.
+
+The "Config" page can take different forms. For very basic modules, it's often a simple JSON editor where you can enter optional values. Others will list their available configuration values in a form.
+
+The "Events" page is similar to the Collection "Events" page.
+
+Depending on the complexity of the custom resource type, it may have different configuration pages.<!--{
+  title: 'Installing a Module',
+  tags: ['installing', 'module']
+}-->
+
+## Installing a Module
+
+### From NPM
+
+Deployd modules are 100% compatible with [node modules](http://npmjs.org). This means you can install a module with [npm](http://npmjs.org) from your project's root directory.
+
+    cd my-dpd-project
+    mkdir -p node_modules
+    npm install my-dpd-module
+
+To find deployd modules available on npm [search for `dpd`](https://encrypted.google.com/search?q=dpd&q=site:npmjs.org&hl=en).
+
+If you need to use a task manager like Grunt or Gulp for your development environement, you'll have to add a package.json as explained [in this page](/docs/server/use-grunt-or-gulp.md).
+
+### From Source
+
+You can also install a module from source by putting it in your project's `node_modules` folder. Even a single file is valid (eg: `/node_modules/foo.js`).
+<!--{
+  title: 'Email',
+  tags: ['resource type', 'module', 'email'],
+  description: 'Send emails from clients or during events.'
+}-->
+
+## Email Resource
+
+This custom resource type allows you to send an email to your users.
+
+The Email resource is built on the [Nodemailer](https://github.com/andris9/Nodemailer) module for Node.js; much of the documentation on this page is taken from their README.
+
+### Installation
+
+In your app's root directory, type `npm install dpd-email` into the command line or [download from source](https://github.com/deployd/dpd-email). This should create a `dpd-email` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Configuration
+
+Before using the email resource, you must go to its Dashboard page and configure it.
+
+These settings are required:
+
+- `host`: The hostname of your SMTP provider.
+- `port`: The port number of your SMTP provider. Defaults to 25; 587 is also common.
+- `ssl`: If checked, use SSL to communicate with your SMTP provider. Unneeded for port 587; as it will automatically upgrade to a secure connection.
+- `username`: The SMTP username for your app.
+- `password`: The SMTP username for your app.
+
+These settings are optional:
+
+- `defaultFromAddress`: A "from" email address to provide by default. If this is not provided, you will need to provide this address in every request.
+- `internalOnly`: If checked, only allow internal requests (such as those from events) to send emails. Recommended for security.
+- `productionOnly`: If checked, attempting to send an email in the `development` environment will simply print it to the Deployd console. 
+
+### Usage
+
+To send an email, call `dpd.email.post(options, callback)` (replacing `email` with your resource name). The `options` argument is an object:
+
+- `from`: The email address of the sender. Required if `defaultFromAddress` is not configured. All e-mail addresses can be plain (`sender@server.com`) or formatted (`Sender Name <sender@server.com>`)
+- `to`: Comma separated list of recipients e-mail addresses that will appear on the To: field
+- `cc`: Comma separated list of recipients e-mail addresses that will appear on the Cc: field
+- `bcc`: Comma separated list of recipients e-mail addresses that will appear on the Bcc: field
+- `subject`: The subject of the e-mail.
+- `text`: The plaintext version of the message
+- `html`: The HTML version of the message
+
+### Example Usage
+
+    // On POST /users
+
+    dpd.email.post({
+      to: this.email,
+      from: "deployd-server@example.com", 
+      subject: "MyApp registration",
+      text: this.username + ",\n\n" +
+            "Thank you for registering for MyApp!"
+    }, function() {});
+<!--{
+  title: 'Event Resource',
+  tags: ['resource type', 'module'],
+  description: 'Create custom events at a specified URL.'
+}-->
+
+## Event Resource
+
+This custom resource type allows you to write an event that will run when the resource's route receives a `GET` or `POST` request.
+
+### Installation
+
+In your app's root directory, type `npm install dpd-event` into the command line or [download the source](https://github.com/deployd/dpd-event). This should create a `dpd-event` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Usage
+
+The `On POST` event will be executed when the resource's route (or a subroute) receives a `POST` request, and likewise with the `On GET` event.
+
+It is strongly recommended that you reserve the `On GET` event for operations that return a value, but don't have any side effects of modifying the database or performing some other operation.  
+
+If your resource is called `/add-follower`, you can trigger its `POST` event from dpd.js:
+
+    dpd.addfollower.post('320d6151a9aad8ce', {userId: '6d75e75d9bd9b8a6'}, function(result, error) {
+      // Do something
+    })
+
+And over HTTP:
+
+    POST /add-follower/320d6151a9aad8ce
+    Content-Type: application/json
+    {
+      "userId": "6d75e75d9bd9b8a6"
+    }
+
+### Event API
+
+In addition to the generic [custom resource event API](/docs/using-modules/reference/event-api.md), the following functions and variables are available while scripting the Event resource:
+
+
+#### setResult(result) <!-- api -->
+
+Sets the response body. The `result` argument can be a string or an object.
+
+    // On GET /top-score
+    dpd.scores.get({$limit: 1, $sort: {score: -1}, function(result) {
+      setResult(result[0]);
+    });
+
+#### url <!-- api -->
+
+The URL of the request, without the resource's base URL. If the resource is called `/add-follower` and receives a request at `/add-follower/320d6151a9aad8ce`, the `url` value will be `/320d6151a9aad8ce`.
+
+    // On GET /statistics
+    // Get the top score
+    if (url === '/top-score') {
+      dpd.scores.get({$limit: 1, $sort: {score: -1}, function(result) {
+        setResult(result[0]);
+      });
+    }
+
+#### parts <!-- api -->
+
+An array of the parts of the url, separated by `/`. If the resource is called `/add-follower` and receives a request at `/add-follower/320d6151a9aad8ce/6d75e75d9bd9b8a6`, the `parts` value will be `['320d6151a9aad8ce', '6d75e75d9bd9b8a6']`.
+
+    // On POST /add-score
+    // Give the specified user (/add-score/:userId) 5 points
+    var userId = parts[0];
+    if (!userId) cancel("You must provide a user");
+
+    dpd.users.put({id: userId}, {score: {$inc: 5}}, function(result, err) {
+      if (err) cancel(err);
+    });
+
+#### query <!-- api -->
+
+The query string object.
+  
+    // On GET /sum
+    // Return the sum of the a and b properties (/sum?a=5&b=1)
+
+    setResult(query.a + query.b);
+
+#### body <!-- api -->
+
+The body of the request.
+
+    // On POST /sum
+    // Return the sum of the a and b properties {a: 5, b: 1}
+
+    setResult(body.a + body.b);<!--{
+	title: 'Importer',
+	tags: ['resource type', 'module', 'import'],
+  description: 'Import collections from existing MongoDBs.'
+}-->
+
+## Importer
+
+This custom resource type allows you to import collections from an existing MongoDB.
+
+### Installation
+
+Create a project. Then install the dpd-importer module.
+
+    dpd create my-app
+    cd my-app
+    mkdir node_modules
+    npm install dpd-importer
+    dpd -d
+    
+In your dashboard - click the green new resource button and choose **Importer**.
+
+Give the new resource the default name "/importer". Open it by clicking "IMPOTER" in the left menu.
+
+Enter the information of your old MongoDB server. Clicking on **Start Import** will start creating deployd collections from data in the provided db by streaming data directly from the old db into your new deployd db. The importer will do its best to create properties based on the types it infers from your data.<!--{
+	title: 'S3 Bucket',
+	tags: ['resource type', 'module', 's3'],
+  description: 'Store and retrieve files from an S3 Bucket.'
+}-->
+
+## S3 Bucket Resource
+
+This custom resource type allows you to store and retrieve files from an [Amazon S3](http://aws.amazon.com/s3/) bucket.
+
+### Installation
+
+In your app's root directory, type `npm install s3-bucket-resource` into the command line or [download the source](https://github.com/deployd/dpd-s3). This should create a `dpd-s3` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Configuration
+
+Before you can use the S3 Bucket resource, you must set the three properties on its "Config" page:
+
+- `bucket`: The name of your S3 Bucket
+- `key`: The security key of your S3 Bucket
+- `secret`: The secret key of your S3 Bucket
+
+### Usage
+
+#### Upload <!-- ref -->
+
+There are two ways to upload files. Both ways require HTTP access; you cannot upload files with dpd.js.
+
+##### Direct upload 
+
+Send a `POST` request to the url where you want to upload the file, including the file name. Set the `Content-Type` header to that of the file you are uploading and pass the file's content in the request body.
+
+It will return a `200 OK` if the upload was successful. If there was an error, it will return the error directly from S3. This is usually in XML; see [Amazon's S3 documentation](http://aws.amazon.com/documentation/s3/) for information.
+
+	POST /my-bucket/README.txt
+	Content-Type: text/plain
+	Hello, world!
+
+	200 OK
+
+##### Multipart upload
+
+You can upload files directly from a browser using the `multipart/form-data` type and the `<input type="file" />` tag:
+
+	<form action="/installer-downloads" enctype="multipart/form-data" method="post">
+		<input type="file" name="upload" multiple="multiple" />
+		<button type="submit">Upload</button>
+	</form>
+
+To send a multipart request manually, send a `POST` request to the url where you want to upload the file, *not* including the file name. The `Content-Type` header must be `multipart/form-data`. Set the request body according to the [multipart/form-data standard](http://www.w3.org/TR/html401/interact/forms.html#h-17.13.4.2).
+
+If the upload was successful and there is a `Referrer` header on the request (e.g. if it was submitted as a form from a browser), the response will redirect to the referrer. Otherwise, it will return `200 OK`. If there was an error, it will return the error directly from S3. This is usually in XML; see [Amazon's S3 documentation](http://aws.amazon.com/documentation/s3/) for information.
+
+#### Retrieving files <!-- ref -->
+
+To download a file, send a `GET` request to the url where the file exists. 
+
+	GET /my-bucket/README.txt
+
+	200 OK
+	Content-Type: text/plain
+	Hello, world!
+
+#### Deleting files <!-- ref -->
+
+To delete a file, send a `DELETE` request to the url where the file exists.
+
+	DELETE /my-bucket/README.txt
+
+	200 OK
+
+This can also be done with dpd.js:
+
+	dpd.mybucket.del('README.txt', function(response, error) {
+		// Do something
+	});
+
+### Events
+
+The S3 Bucket Resource has three events:
+
+- `On Upload`: Executed before a file is uploaded to S3.
+- `On Get`: Executed before a file is downloaded from S3.
+- `On Delete`: Executed before a file is deleted.
+
+### Event API
+
+#### url <!-- api -->
+
+The URL of the request. Does not include the resource's name; if the request URL is `/my-bucket/README.txt`, the `url` property will be `/README.txt`.
+
+#### fileSize  <!-- api -->
+
+Only available in `On Upload`. The size of the file, in bytes.
+
+		// On Upload
+		// Set a limit on file size
+		if (fileSize > 1024*1024*1024) { // 1GB
+			cancel("File is too big; limit is 1GB");
+		}
+
+#### fileName <!-- api -->
+
+Only available in `On Upload`. The name of the file that is being uploaded.
+
+		// On Upload
+		dpd.uploads.post({ filename: fileName, creator: me.id }, function() {})
+<!--{
+	title: 'Dpd.js for Custom Resources',
+	tags: ['dpd.js', 'custom', 'resource']
+}-->
+
+## Dpd.js for Custom Resources
+
+Because Custom Resource Types can specify APIs very different from a Collection, Dpd.js acts as a generic HTTP library for Custom Resources.
+
+### Accessing the Resource
+
+The API for your Resource is automatically generated as `dpd.[resource]`.
+
+Examples:
+
+	dpd.emails
+	dpd.addfollower
+	dpd.uploads
+
+*Note: If your Resource name has a dash in it (e.g. `/add-follower`), the dash is removed when accessing it in this way (e.g. `dpd.addfollower`).*
+
+You can also access your resource by using `dpd(resourceName)` as a function.
+
+Examples:
+
+	dpd('emails')
+	dpd('add-follower')
+	dpd('uploads')
+
+### Callbacks
+
+Every function in the Dpd.js API takes a callback function (represented by `fn` in the docs) with the signature `function(result, error)`.
+
+The callback will be executed asynchronously when the API has received a response from the server.
+
+The `result` argument differs depending on the function. If the result failed, it will be `null` and the `error` argument will contain the error message.
+
+The `error` argument, if there was an error, is an object:
+
+ - `status` (number): The HTTP status code of the request. Common codes include:
+	- 400 - Bad Request: The request contained invalid data and could not be completed
+	- 401 - Unauthorized: The current session is not authorized to perform that action
+	- 500 - Internal Server Error: Something went wrong on the server
+ - `message` (string): A message describing the error. Not always present.
+ - `errors` (object): A hash of error messages corresponding to the properties of the object that was sent - usually indicates validation errors. Not always present.
+
+Examples of errors:
+
+	{
+		"status": 401,
+		"message": "You are not allowed to access that resource!"
+	}
+
+<!--...-->
+
+	{
+		"status": 400,
+		"errors": {
+			"title": "Title must be less than 100 characters",
+			"category": "Not a valid category"
+		}
+	}
+
+
+
+#### Promises
+
+Every function in the collection API returns a promise.
+We use the [`ayepromise` library](https://github.com/cburgmer/ayepromise) (which follows the [Promises/A+ 1.1 specs](https://promisesaplus.com/)).
+To learn how to use promises, please, refer [to this article](http://www.html5rocks.com/en/tutorials/es6/promises).
+
+The first callback contains the same `result` same with the classic callbacks.
+The second callback contains the `error` object as described above.
+Here's an example to use promises within dpd.js:
+
+	dpd.todos.post({message: "Hello world"}).then(function(todo) {
+		// do something with todo
+		console.log(todo); // display {id: "###", message: 'Hello world'}
+	}, function(err) {
+		// do something with the error
+		console.log(err); // display an error if the request failed
+	});
+
+<!--...-->
+
+	dpd.todos.get('1234324324').then(function(todo) {
+		// do something with todo
+		console.log(todo); // display {id: "###", message: 'Hello world'}
+	}, function(err) {
+		// do something with the error
+		console.log(err.errors.message); // display the error message
+	});
+
+
+### get() <!-- api -->
+
+	dpd.[resource].get([func], [path], [query], fn)
+
+Makes a GET HTTP request at the URL `/<resource>/<func>/<path>`, using the `query` object as the query string if provided.
+
+- `func` - A special identifier, i.e. `/me`.
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON.
+- `fn` - Callback `function(result, error)`.
+
+###  post() <!-- api -->
+
+	dpd.[resource].post([path], [query], body, fn)
+
+Makes a POST HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided and `body` as the request body.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON.
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### put() <!-- api -->
+
+	dpd.[resource].put([path], [query], body, fn)
+
+Makes a PUT HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided and `body` as the request body.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON and passed as the `q` parameter.
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### del() <!-- api -->
+
+	dpd.[resource].del([path], [query], fn)
+
+Makes a DELETE HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON and passed as the `q` parameter.
+- `fn` - Callback `function(result, error)`.
+
+
+### exec() <!-- api -->
+
+	dpd.[resource].exec(func, [path], [body], fn)
+
+Makes an RPC-style POST HTTP request at the URL `/<resource>/<func>/<path>`. Useful for functions that don't make sense in REST-style APIs, such as `/users/login`.
+
+- `func` - The name of the function to call
+- `path` - An identifier for a particular object, usually the id
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### Realtime API
+
+The Generic Realtime API behaves the same way as the [Collection Realtime API](/docs/collections/reference/dpd-js.md#s-Realtime-API).
+<!--{
+  title: 'Event API for Custom Resources',
+  tags: ['event', 'custom', 'resource']
+}-->
+
+## Event API for Custom Resources
+
+### Background
+
+Custom Resources may load **event scripts** to allow you to inject business logic during requests to the resource. For example, the collection resource exposes an event called *validate*. Given the following todo resource folder:
+
+    /my-app
+      /resources
+        /todos
+          validate.js
+
+The collection resource would load the contents of `validate.js` as the `validate` event.
+
+### Default Event Script Domain
+
+Event scripts do not share a global scope with other modules in your app. Instead each time an event script is run, a new scope is created for it.
+
+The following functions and objects are available to all event scripts.
+
+#### ctx <!-- ctx -->
+
+The context of the request. This object contains everything from the request (request, response, body, headers, etc...):
+
+    // Example:
+    if (ctx && ctx.req && ctx.req.headers && ctx.req.headers.host !== '192.168.178.34:2403') {
+      cancel("You are not authorized to do that", 401);
+    }
+
+The entire object is [available as a gist here](https://gist.github.com/NicolasRitouet/2fc5dd20f3af7dc7e192).
+
+#### me <!-- api -->
+
+The current user if one exists on the current `Context`.
+
+#### isMe() <!-- api -->
+
+    isMe(id)
+
+Returns true if the current user (`me`) matches the provided `id`.
+
+#### this <!-- api -->
+
+If the resource does not implement a custom domain, this will be an empty object. Otherwise `this` usually refers to the current domain's instance (eg. an object in a collection).
+
+#### cancel() <!-- api -->
+
+    cancel(message, [statusCode])
+
+Stops the current request with the provided error message and HTTP status code. Status code defaults to `400`.
+
+#### cancelIf(), cancelUnless() <!-- api -->
+
+    cancelIf(condition, message, [statusCode])
+    cancelUnless(condition, message, [statusCode])
+
+Calls `cancel(message, statusCode)` if the provided condition is truthy (for `cancelIf()`) or falsy (for `cancelUnless`).
+
+#### internal <!-- api -->
+
+A boolean property, true if this request has been initiated by another script.
+
+#### isRoot <!-- api -->
+
+A boolean property, true if this request is authenticated as root (from the dashboard or a custom script).
+
+#### query <!-- api -->
+
+The current HTTP query. (eg ?foo=bar - query would be {foo: 'bar'}).
+
+#### emit() <!-- api -->
+
+    emit([userCollection, query], message, [data])
+
+Emits a realtime message to the client. You can use `userCollection` and `query` parameters to limit the message broadcast to specific users.
+
+#### console <!-- api -->
+
+Support for console.log() and other console methods.
+<!--{
+  title: 'Using a Custom Resource Type',
+  tags: ['resource type', 'module']
+}-->
+
+### Using a Custom Resource Type
+
+Deployd modules can register new *Resource Types*, which can be created with a route and configured per instance. Deployd comes with two built-in Resource Types: "Collection" and "User Collection". 
+
+To add more Resource Types, you can [install](/docs/using-modules/installing-modules.md) a module that includes one. The examples on this page use the [Event resource](/docs/using-modules/official/event.md).
+
+#### Creating an instance of a Custom Resource Type
+
+Once the module is properly installed, you can add the custom resource just like a Collection. Custom Resources will usually have an asterisk <i class="icon-asterisk"></i> icon. 
+
+![Creating an Event resource](/tutorials/resource-type/creating-custom-resource.png)
+
+*Note: After adding any module, you will have to restart the Deployd server to see its effects. If you don't see the custom resource type in the list, you may have to restart the server and refresh the dashboard.*
+
+#### Configuring a Custom Resource Type
+
+See the documentation of your Custom Resource Type module for details on configuration options. Most custom resource types implement a "Config" page and an "Events" page.
+
+The "Config" page can take different forms. For very basic modules, it's often a simple JSON editor where you can enter optional values. Others will list their available configuration values in a form.
+
+The "Events" page is similar to the Collection "Events" page.
+
+Depending on the complexity of the custom resource type, it may have different configuration pages.<!--{
+  title: 'Installing a Module',
+  tags: ['installing', 'module']
+}-->
+
+## Installing a Module
+
+### From NPM
+
+Deployd modules are 100% compatible with [node modules](http://npmjs.org). This means you can install a module with [npm](http://npmjs.org) from your project's root directory.
+
+    cd my-dpd-project
+    mkdir -p node_modules
+    npm install my-dpd-module
+
+To find deployd modules available on npm [search for `dpd`](https://encrypted.google.com/search?q=dpd&q=site:npmjs.org&hl=en).
+
+If you need to use a task manager like Grunt or Gulp for your development environement, you'll have to add a package.json as explained [in this page](/docs/server/use-grunt-or-gulp.md).
+
+### From Source
+
+You can also install a module from source by putting it in your project's `node_modules` folder. Even a single file is valid (eg: `/node_modules/foo.js`).
+<!--{
+  title: 'Email',
+  tags: ['resource type', 'module', 'email'],
+  description: 'Send emails from clients or during events.'
+}-->
+
+## Email Resource
+
+This custom resource type allows you to send an email to your users.
+
+The Email resource is built on the [Nodemailer](https://github.com/andris9/Nodemailer) module for Node.js; much of the documentation on this page is taken from their README.
+
+### Installation
+
+In your app's root directory, type `npm install dpd-email` into the command line or [download from source](https://github.com/deployd/dpd-email). This should create a `dpd-email` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Configuration
+
+Before using the email resource, you must go to its Dashboard page and configure it.
+
+These settings are required:
+
+- `host`: The hostname of your SMTP provider.
+- `port`: The port number of your SMTP provider. Defaults to 25; 587 is also common.
+- `ssl`: If checked, use SSL to communicate with your SMTP provider. Unneeded for port 587; as it will automatically upgrade to a secure connection.
+- `username`: The SMTP username for your app.
+- `password`: The SMTP username for your app.
+
+These settings are optional:
+
+- `defaultFromAddress`: A "from" email address to provide by default. If this is not provided, you will need to provide this address in every request.
+- `internalOnly`: If checked, only allow internal requests (such as those from events) to send emails. Recommended for security.
+- `productionOnly`: If checked, attempting to send an email in the `development` environment will simply print it to the Deployd console. 
+
+### Usage
+
+To send an email, call `dpd.email.post(options, callback)` (replacing `email` with your resource name). The `options` argument is an object:
+
+- `from`: The email address of the sender. Required if `defaultFromAddress` is not configured. All e-mail addresses can be plain (`sender@server.com`) or formatted (`Sender Name <sender@server.com>`)
+- `to`: Comma separated list of recipients e-mail addresses that will appear on the To: field
+- `cc`: Comma separated list of recipients e-mail addresses that will appear on the Cc: field
+- `bcc`: Comma separated list of recipients e-mail addresses that will appear on the Bcc: field
+- `subject`: The subject of the e-mail.
+- `text`: The plaintext version of the message
+- `html`: The HTML version of the message
+
+### Example Usage
+
+    // On POST /users
+
+    dpd.email.post({
+      to: this.email,
+      from: "deployd-server@example.com", 
+      subject: "MyApp registration",
+      text: this.username + ",\n\n" +
+            "Thank you for registering for MyApp!"
+    }, function() {});
+<!--{
+  title: 'Event Resource',
+  tags: ['resource type', 'module'],
+  description: 'Create custom events at a specified URL.'
+}-->
+
+## Event Resource
+
+This custom resource type allows you to write an event that will run when the resource's route receives a `GET` or `POST` request.
+
+### Installation
+
+In your app's root directory, type `npm install dpd-event` into the command line or [download the source](https://github.com/deployd/dpd-event). This should create a `dpd-event` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Usage
+
+The `On POST` event will be executed when the resource's route (or a subroute) receives a `POST` request, and likewise with the `On GET` event.
+
+It is strongly recommended that you reserve the `On GET` event for operations that return a value, but don't have any side effects of modifying the database or performing some other operation.  
+
+If your resource is called `/add-follower`, you can trigger its `POST` event from dpd.js:
+
+    dpd.addfollower.post('320d6151a9aad8ce', {userId: '6d75e75d9bd9b8a6'}, function(result, error) {
+      // Do something
+    })
+
+And over HTTP:
+
+    POST /add-follower/320d6151a9aad8ce
+    Content-Type: application/json
+    {
+      "userId": "6d75e75d9bd9b8a6"
+    }
+
+### Event API
+
+In addition to the generic [custom resource event API](/docs/using-modules/reference/event-api.md), the following functions and variables are available while scripting the Event resource:
+
+
+#### setResult(result) <!-- api -->
+
+Sets the response body. The `result` argument can be a string or an object.
+
+    // On GET /top-score
+    dpd.scores.get({$limit: 1, $sort: {score: -1}, function(result) {
+      setResult(result[0]);
+    });
+
+#### url <!-- api -->
+
+The URL of the request, without the resource's base URL. If the resource is called `/add-follower` and receives a request at `/add-follower/320d6151a9aad8ce`, the `url` value will be `/320d6151a9aad8ce`.
+
+    // On GET /statistics
+    // Get the top score
+    if (url === '/top-score') {
+      dpd.scores.get({$limit: 1, $sort: {score: -1}, function(result) {
+        setResult(result[0]);
+      });
+    }
+
+#### parts <!-- api -->
+
+An array of the parts of the url, separated by `/`. If the resource is called `/add-follower` and receives a request at `/add-follower/320d6151a9aad8ce/6d75e75d9bd9b8a6`, the `parts` value will be `['320d6151a9aad8ce', '6d75e75d9bd9b8a6']`.
+
+    // On POST /add-score
+    // Give the specified user (/add-score/:userId) 5 points
+    var userId = parts[0];
+    if (!userId) cancel("You must provide a user");
+
+    dpd.users.put({id: userId}, {score: {$inc: 5}}, function(result, err) {
+      if (err) cancel(err);
+    });
+
+#### query <!-- api -->
+
+The query string object.
+  
+    // On GET /sum
+    // Return the sum of the a and b properties (/sum?a=5&b=1)
+
+    setResult(query.a + query.b);
+
+#### body <!-- api -->
+
+The body of the request.
+
+    // On POST /sum
+    // Return the sum of the a and b properties {a: 5, b: 1}
+
+    setResult(body.a + body.b);<!--{
+	title: 'Importer',
+	tags: ['resource type', 'module', 'import'],
+  description: 'Import collections from existing MongoDBs.'
+}-->
+
+## Importer
+
+This custom resource type allows you to import collections from an existing MongoDB.
+
+### Installation
+
+Create a project. Then install the dpd-importer module.
+
+    dpd create my-app
+    cd my-app
+    mkdir node_modules
+    npm install dpd-importer
+    dpd -d
+    
+In your dashboard - click the green new resource button and choose **Importer**.
+
+Give the new resource the default name "/importer". Open it by clicking "IMPOTER" in the left menu.
+
+Enter the information of your old MongoDB server. Clicking on **Start Import** will start creating deployd collections from data in the provided db by streaming data directly from the old db into your new deployd db. The importer will do its best to create properties based on the types it infers from your data.<!--{
+	title: 'S3 Bucket',
+	tags: ['resource type', 'module', 's3'],
+  description: 'Store and retrieve files from an S3 Bucket.'
+}-->
+
+## S3 Bucket Resource
+
+This custom resource type allows you to store and retrieve files from an [Amazon S3](http://aws.amazon.com/s3/) bucket.
+
+### Installation
+
+In your app's root directory, type `npm install s3-bucket-resource` into the command line or [download the source](https://github.com/deployd/dpd-s3). This should create a `dpd-s3` directory in your app's `node_modules` directory.
+
+See [Installing Modules](/docs/using-modules/installing-modules.md) for details.
+
+### Configuration
+
+Before you can use the S3 Bucket resource, you must set the three properties on its "Config" page:
+
+- `bucket`: The name of your S3 Bucket
+- `key`: The security key of your S3 Bucket
+- `secret`: The secret key of your S3 Bucket
+
+### Usage
+
+#### Upload <!-- ref -->
+
+There are two ways to upload files. Both ways require HTTP access; you cannot upload files with dpd.js.
+
+##### Direct upload 
+
+Send a `POST` request to the url where you want to upload the file, including the file name. Set the `Content-Type` header to that of the file you are uploading and pass the file's content in the request body.
+
+It will return a `200 OK` if the upload was successful. If there was an error, it will return the error directly from S3. This is usually in XML; see [Amazon's S3 documentation](http://aws.amazon.com/documentation/s3/) for information.
+
+	POST /my-bucket/README.txt
+	Content-Type: text/plain
+	Hello, world!
+
+	200 OK
+
+##### Multipart upload
+
+You can upload files directly from a browser using the `multipart/form-data` type and the `<input type="file" />` tag:
+
+	<form action="/installer-downloads" enctype="multipart/form-data" method="post">
+		<input type="file" name="upload" multiple="multiple" />
+		<button type="submit">Upload</button>
+	</form>
+
+To send a multipart request manually, send a `POST` request to the url where you want to upload the file, *not* including the file name. The `Content-Type` header must be `multipart/form-data`. Set the request body according to the [multipart/form-data standard](http://www.w3.org/TR/html401/interact/forms.html#h-17.13.4.2).
+
+If the upload was successful and there is a `Referrer` header on the request (e.g. if it was submitted as a form from a browser), the response will redirect to the referrer. Otherwise, it will return `200 OK`. If there was an error, it will return the error directly from S3. This is usually in XML; see [Amazon's S3 documentation](http://aws.amazon.com/documentation/s3/) for information.
+
+#### Retrieving files <!-- ref -->
+
+To download a file, send a `GET` request to the url where the file exists. 
+
+	GET /my-bucket/README.txt
+
+	200 OK
+	Content-Type: text/plain
+	Hello, world!
+
+#### Deleting files <!-- ref -->
+
+To delete a file, send a `DELETE` request to the url where the file exists.
+
+	DELETE /my-bucket/README.txt
+
+	200 OK
+
+This can also be done with dpd.js:
+
+	dpd.mybucket.del('README.txt', function(response, error) {
+		// Do something
+	});
+
+### Events
+
+The S3 Bucket Resource has three events:
+
+- `On Upload`: Executed before a file is uploaded to S3.
+- `On Get`: Executed before a file is downloaded from S3.
+- `On Delete`: Executed before a file is deleted.
+
+### Event API
+
+#### url <!-- api -->
+
+The URL of the request. Does not include the resource's name; if the request URL is `/my-bucket/README.txt`, the `url` property will be `/README.txt`.
+
+#### fileSize  <!-- api -->
+
+Only available in `On Upload`. The size of the file, in bytes.
+
+		// On Upload
+		// Set a limit on file size
+		if (fileSize > 1024*1024*1024) { // 1GB
+			cancel("File is too big; limit is 1GB");
+		}
+
+#### fileName <!-- api -->
+
+Only available in `On Upload`. The name of the file that is being uploaded.
+
+		// On Upload
+		dpd.uploads.post({ filename: fileName, creator: me.id }, function() {})
+<!--{
+	title: 'Dpd.js for Custom Resources',
+	tags: ['dpd.js', 'custom', 'resource']
+}-->
+
+## Dpd.js for Custom Resources
+
+Because Custom Resource Types can specify APIs very different from a Collection, Dpd.js acts as a generic HTTP library for Custom Resources.
+
+### Accessing the Resource
+
+The API for your Resource is automatically generated as `dpd.[resource]`.
+
+Examples:
+
+	dpd.emails
+	dpd.addfollower
+	dpd.uploads
+
+*Note: If your Resource name has a dash in it (e.g. `/add-follower`), the dash is removed when accessing it in this way (e.g. `dpd.addfollower`).*
+
+You can also access your resource by using `dpd(resourceName)` as a function.
+
+Examples:
+
+	dpd('emails')
+	dpd('add-follower')
+	dpd('uploads')
+
+### Callbacks
+
+Every function in the Dpd.js API takes a callback function (represented by `fn` in the docs) with the signature `function(result, error)`.
+
+The callback will be executed asynchronously when the API has received a response from the server.
+
+The `result` argument differs depending on the function. If the result failed, it will be `null` and the `error` argument will contain the error message.
+
+The `error` argument, if there was an error, is an object:
+
+ - `status` (number): The HTTP status code of the request. Common codes include:
+	- 400 - Bad Request: The request contained invalid data and could not be completed
+	- 401 - Unauthorized: The current session is not authorized to perform that action
+	- 500 - Internal Server Error: Something went wrong on the server
+ - `message` (string): A message describing the error. Not always present.
+ - `errors` (object): A hash of error messages corresponding to the properties of the object that was sent - usually indicates validation errors. Not always present.
+
+Examples of errors:
+
+	{
+		"status": 401,
+		"message": "You are not allowed to access that resource!"
+	}
+
+<!--...-->
+
+	{
+		"status": 400,
+		"errors": {
+			"title": "Title must be less than 100 characters",
+			"category": "Not a valid category"
+		}
+	}
+
+
+
+#### Promises
+
+Every function in the collection API returns a promise.
+We use the [`ayepromise` library](https://github.com/cburgmer/ayepromise) (which follows the [Promises/A+ 1.1 specs](https://promisesaplus.com/)).
+To learn how to use promises, please, refer [to this article](http://www.html5rocks.com/en/tutorials/es6/promises).
+
+The first callback contains the same `result` same with the classic callbacks.
+The second callback contains the `error` object as described above.
+Here's an example to use promises within dpd.js:
+
+	dpd.todos.post({message: "Hello world"}).then(function(todo) {
+		// do something with todo
+		console.log(todo); // display {id: "###", message: 'Hello world'}
+	}, function(err) {
+		// do something with the error
+		console.log(err); // display an error if the request failed
+	});
+
+<!--...-->
+
+	dpd.todos.get('1234324324').then(function(todo) {
+		// do something with todo
+		console.log(todo); // display {id: "###", message: 'Hello world'}
+	}, function(err) {
+		// do something with the error
+		console.log(err.errors.message); // display the error message
+	});
+
+
+### get() <!-- api -->
+
+	dpd.[resource].get([func], [path], [query], fn)
+
+Makes a GET HTTP request at the URL `/<resource>/<func>/<path>`, using the `query` object as the query string if provided.
+
+- `func` - A special identifier, i.e. `/me`.
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON.
+- `fn` - Callback `function(result, error)`.
+
+###  post() <!-- api -->
+
+	dpd.[resource].post([path], [query], body, fn)
+
+Makes a POST HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided and `body` as the request body.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON.
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### put() <!-- api -->
+
+	dpd.[resource].put([path], [query], body, fn)
+
+Makes a PUT HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided and `body` as the request body.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON and passed as the `q` parameter.
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### del() <!-- api -->
+
+	dpd.[resource].del([path], [query], fn)
+
+Makes a DELETE HTTP request at the URL `/<resource>/<path>`, using the `query` object as the query string if provided.
+
+- `path` - An identifier for a particular object, usually the id
+- `query` - An object defining the querystring. If the object is complex, it will be serialized as JSON and passed as the `q` parameter.
+- `fn` - Callback `function(result, error)`.
+
+
+### exec() <!-- api -->
+
+	dpd.[resource].exec(func, [path], [body], fn)
+
+Makes an RPC-style POST HTTP request at the URL `/<resource>/<func>/<path>`. Useful for functions that don't make sense in REST-style APIs, such as `/users/login`.
+
+- `func` - The name of the function to call
+- `path` - An identifier for a particular object, usually the id
+- `body` - The body of the request; will be serialized as JSON and sent with `Content-Type: application/json` header.
+- `fn` - Callback `function(result, error)`.
+
+### Realtime API
+
+The Generic Realtime API behaves the same way as the [Collection Realtime API](/docs/collections/reference/dpd-js.md#s-Realtime-API).
+<!--{
+  title: 'Event API for Custom Resources',
+  tags: ['event', 'custom', 'resource']
+}-->
+
+## Event API for Custom Resources
+
+### Background
+
+Custom Resources may load **event scripts** to allow you to inject business logic during requests to the resource. For example, the collection resource exposes an event called *validate*. Given the following todo resource folder:
+
+    /my-app
+      /resources
+        /todos
+          validate.js
+
+The collection resource would load the contents of `validate.js` as the `validate` event.
+
+### Default Event Script Domain
+
+Event scripts do not share a global scope with other modules in your app. Instead each time an event script is run, a new scope is created for it.
+
+The following functions and objects are available to all event scripts.
+
+#### ctx <!-- ctx -->
+
+The context of the request. This object contains everything from the request (request, response, body, headers, etc...):
+
+    // Example:
+    if (ctx && ctx.req && ctx.req.headers && ctx.req.headers.host !== '192.168.178.34:2403') {
+      cancel("You are not authorized to do that", 401);
+    }
+
+The entire object is [available as a gist here](https://gist.github.com/NicolasRitouet/2fc5dd20f3af7dc7e192).
+
+#### me <!-- api -->
+
+The current user if one exists on the current `Context`.
+
+#### isMe() <!-- api -->
+
+    isMe(id)
+
+Returns true if the current user (`me`) matches the provided `id`.
+
+#### this <!-- api -->
+
+If the resource does not implement a custom domain, this will be an empty object. Otherwise `this` usually refers to the current domain's instance (eg. an object in a collection).
+
+#### cancel() <!-- api -->
+
+    cancel(message, [statusCode])
+
+Stops the current request with the provided error message and HTTP status code. Status code defaults to `400`.
+
+#### cancelIf(), cancelUnless() <!-- api -->
+
+    cancelIf(condition, message, [statusCode])
+    cancelUnless(condition, message, [statusCode])
+
+Calls `cancel(message, statusCode)` if the provided condition is truthy (for `cancelIf()`) or falsy (for `cancelUnless`).
+
+#### internal <!-- api -->
+
+A boolean property, true if this request has been initiated by another script.
+
+#### isRoot <!-- api -->
+
+A boolean property, true if this request is authenticated as root (from the dashboard or a custom script).
+
+#### query <!-- api -->
+
+The current HTTP query. (eg ?foo=bar - query would be {foo: 'bar'}).
+
+#### emit() <!-- api -->
+
+    emit([userCollection, query], message, [data])
+
+Emits a realtime message to the client. You can use `userCollection` and `query` parameters to limit the message broadcast to specific users.
+
+#### console <!-- api -->
+
+Support for console.log() and other console methods.
+<!--{
+  title: 'Using a Custom Resource Type',
+  tags: ['resource type', 'module']
+}-->
+
+### Using a Custom Resource Type
+
+Deployd modules can register new *Resource Types*, which can be created with a route and configured per instance. Deployd comes with two built-in Resource Types: "Collection" and "User Collection". 
+
+To add more Resource Types, you can [install](/docs/using-modules/installing-modules.md) a module that includes one. The examples on this page use the [Event resource](/docs/using-modules/official/event.md).
+
+#### Creating an instance of a Custom Resource Type
+
+Once the module is properly installed, you can add the custom resource just like a Collection. Custom Resources will usually have an asterisk <i class="icon-asterisk"></i> icon. 
+
+![Creating an Event resource](/tutorials/resource-type/creating-custom-resource.png)
+
+*Note: After adding any module, you will have to restart the Deployd server to see its effects. If you don't see the custom resource type in the list, you may have to restart the server and refresh the dashboard.*
+
+#### Configuring a Custom Resource Type
+
+See the documentation of your Custom Resource Type module for details on configuration options. Most custom resource types implement a "Config" page and an "Events" page.
+
+The "Config" page can take different forms. For very basic modules, it's often a simple JSON editor where you can enter optional values. Others will list their available configuration values in a form.
+
+The "Events" page is similar to the Collection "Events" page.
+
+Depending on the complexity of the custom resource type, it may have different configuration pages.
