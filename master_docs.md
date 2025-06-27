@@ -3531,3 +3531,261 @@ Remove an object or objects in the store that match the given query.
 Rename the store.
 
 
+<!--{
+  title: 'Using Deployd as a Node.js Module',
+  tags: ['node', 'module', 'server']
+}-->
+
+## Using Deployd as a Node.js Module
+
+Deployd is a node module and can be used inside other node programs or as the basis of an entire node program.
+
+### Installing
+
+For an app in your current directory:
+
+    npm install deployd
+
+You can also install globally:
+
+    npm install deployd -g
+
+### Hello World
+
+Here is a simple *hello world* using Deployd as a node module.
+
+    // hello.js
+    var deployd = require('deployd')
+      , options = {port: 3000};
+
+    var dpd = deployd(options);
+
+    dpd.listen();
+
+Run this like any other node program.
+
+    node hello.js
+
+### Server Options <!-- ref -->
+
+- **port** {Number} - the port to listen on
+- **db** {Object} - the database to connect to
+ - **db.connectionString** {String} - The URI of the mongoDB using [standard Connection String](http://docs.mongodb.org/manual/reference/connection-string/). If `db.connectionString` is set, the other db options are ignored.
+ - **db.port** {Number} - the port of the database server
+ - **db.host** {String} - the ip or domain of the database server
+ - **db.name** {String} - the name of the database
+ - **db.credentials** {Object} - credentials for db
+  - **db.credentials.username** {String}
+  - **db.credentials.password** {String}
+- **env** {String} - the environment to run in.
+
+*Note: If options.env is "development", the dashboard will not require authentication and configuration will not be cached. Make sure to change this to "production" or something similar when deploying.*
+
+### Caveats
+
+- Deployd mounts its server on `process.server`. This means you can only run one Deployd server in a process.
+- Deployd loads resources from the `process.cwd`. Add this to ensure you are in the right directory: `process.chdir(__dirname)`.
+- In order to access the `/dashboard` without a key you must run Deployd with the `env` option set to `development`.
+<!--{
+  title: 'Building a custom run script in Node.js',
+  tags: ['node', 'module', 'server', 'deployment']
+}-->
+
+## Building a custom run script in Node.js
+
+When running in non-local environments we recommend using a simple node script to start your deployd server. With each environment using its own script, you can easily separate out environmental variables (such as connection information) and actions (such as clearing out a test database).
+
+### Example - Production
+
+    // production.js
+    var deployd = require('deployd');
+
+    var server = deployd({
+      port: process.env.PORT || 5000,
+      env: 'production',
+      db: {
+        host: 'my.production.mongo.host',
+        port: 27105,
+        name: 'my-db',
+        credentials: {
+          username: 'username',
+          password: 'password'
+        }
+      }
+    });
+
+    server.listen();
+
+    server.on('listening', function() {
+      console.log("Server is listening");
+    });
+
+    server.on('error', function(err) {
+      console.error(err);
+      process.nextTick(function() { // Give the server a chance to return an error
+        process.exit();
+      });
+    });
+
+### Example - Staging
+
+    // staging.js
+    var deployd = require('deployd');
+
+    var server = deployd({
+      port: process.env.PORT || 5000,
+      env: 'staging',
+      db: {
+        host: 'my.production.mongo.host',
+        port: 27105,
+        name: 'my-db',
+        credentials: {
+          username: 'username',
+          password: 'password'
+        }
+      }
+    });
+
+    // remove all data in the 'todos' collection
+    var todos = server.createStore('todos');
+      
+    todos.remove(function() {
+      // all todos removed
+      server.listen();
+    });
+
+    server.on('error', function(err) {
+      console.error(err);
+      process.nextTick(function() { // Give the server a chance to return an error
+        process.exit();
+      });
+    });
+    
+### Running Your App in Production
+
+To run your app as a daemon, use the `forever` module. You can install it from npm.
+
+    npm install forever -g
+    
+Then start the appropriate run script based on your environment.
+
+    forever start production.js
+    
+This will daemonize your app and make sure it runs even if it crashes.<!--{
+  title: 'Using grunt or gulp with Deployd',
+  tags: ['grunt', 'gulp', 'package.json']
+}-->
+
+## Using grunt or gulp with Deployd
+
+By default, Deployd will load all npm modules found in `node_modules`. This can be problematic if you want to use Grunt, gulp or other development tools: Deployd will try to load them since they are inside the `node_modules`folder and will fail.  
+To avoid that, you can add a package.json and let Deployd know which dependencies to load.
+
+
+Inside `devDependencies`, you can add your grunt/gulp plugins and inside `dependencies`, add the dpd modules you need.
+
+
+Example:  
+
+    "dependencies": {
+      "deployd": "^0.7.0",
+      "dpd-fileupload": "^0.0.10"
+    },
+    "devDependencies": {
+      "gulp": "^3.6.2",
+      "gulp-jshint": "^1.6.1"
+    }
+<!--{
+  title: 'Using Deployd as an Express middleware',
+  tags: ['express', 'connect', 'middleware', 'server']
+}-->
+
+## Using Deployd as an Express middleware
+
+Deployd can be used with express/connect. Deployd will attach functions and handler to express server object.
+
+### Installing
+
+For an app in your current directory:
+
+    npm install deployd express socket.io
+
+### Hello World
+
+Here is a simple *hello world* using Deployd as an express middleware.
+
+    // hello-server-attach.js
+    var PORT = process.env.PORT || 3000;
+    var ENV = process.env.NODE_ENV || 'development';
+
+    // setup http + express + socket.io
+    var express = require('express');
+    var app = express();
+    var server = require('http').createServer(app);
+    var io = require('socket.io').listen(server, {'log level': 0});
+
+    // setup deployd
+    require('deployd').attach(server, {
+        socketIo: io,  // if not provided, attach will create one for you.
+        env: ENV,
+        db: {host:'localhost', port:27017, name:'test-app'}
+    });
+
+    // After attach, express can use server.handleRequest as middleware
+    app.use(server.handleRequest);
+
+    // start server
+    server.listen(PORT);
+
+
+Run this like any other express server.
+
+    node hello-server-attach.js
+
+### Server Options <!-- ref -->
+
+- **db** {Object} - the database to connect to
+ - **db.connectionString** {String} - The URI of the mongoDB using [standard Connection String](http://docs.mongodb.org/manual/reference/connection-string/). If `db.connectionString` is set, the other db options are ignored.
+ - **db.port** {Number} - the port of the database server
+ - **db.host** {String} - the ip or domain of the database server
+ - **db.name** {String} - the name of the database
+ - **db.credentials** {Object} - credentials for db
+  - **db.credentials.username** {String}
+  - **db.credentials.password** {String}
+- **env** {String} - the environment to run in.
+- **socketIo** {Object} - socket.io instance.
+
+*Note: If options.env is "development", the dashboard will not require authentication and configuration will not be cached. Make sure to change this to "production" or something similar when deploying.*
+
+### Caveats
+
+- Deployd mounts its server on `process.server`. This means you can only run one Deployd server in a process.
+- Deployd loads resources from the `process.cwd`. Add this to ensure you are in the right directory: `process.chdir(__dirname)`.
+- In order to access the `/dashboard` without a key you must run Deployd with the `env` option set to `development`.
+<!--{
+  title: 'Deploying to your own Server',
+  tags: ['guide', 'deploy', 'hosting']
+}-->
+
+## Deploying to your own Server
+
+To deploy your app on your server, or on a cloud hosting service such as EC2 or Heroku, the server must support [Node.js](http://nodejs.org/). 
+
+Deployd also requires a [MongoDB](http://www.mongodb.org/) database, which can be hosted on the same server or externally. 
+
+If you have root shell access on the deployment server, you can install Deployd on it using the command `npm install -g deployd`. 
+Otherwise, you will need to install Deployd as a dependency of your app itself using `npm install deployd` in the root directory of your app.
+
+You can use the `dpd` CLI to run your server; this will start up an instance of MongoDB automatically, using the "data" folder. (Requires MongoDB installed on the server)
+
+### Dashboard Access
+
+To set up the dashboard on your server, type `dpd keygen` on your server's command line to create a remote access key. Type `dpd showkey` to get the key; you should store this somewhere secure.
+
+You can then go to the `/dashboard` route on the server and type in that key to gain access.
+
+### Server Script
+
+Since Deployd is itself a node module, you can write your own scripts to run in production instead of using the command line interface. Read the [Building a Custom Run Script](/docs/server/run-script.md) Guide.
+
+*Note: Some hosts do not support WebSockets, so `dpd.on()` may not work correctly on certain deployments.*
